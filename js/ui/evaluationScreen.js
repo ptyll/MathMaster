@@ -18,9 +18,9 @@ export function createEvaluationScreen(container, { summary, granted, nextLabel 
   root.className = 'evaluation';
 
   const h1 = document.createElement('h1');
-  h1.textContent = 'Mise splněna!';
+  h1.textContent = summary.boss ? 'Boss je poražen!' : 'Mise splněna!';
 
-  // --- Hvězdy za TENTO běh (animované postupné přičtení) ---
+  // --- Hvězdy za TENTO běh (boss hvězdy nemá - jen výhru) ---
   const stars = document.createElement('div');
   stars.className = 'eval-stars';
   stars.setAttribute('role', 'img');
@@ -31,6 +31,9 @@ export function createEvaluationScreen(container, { summary, granted, nextLabel 
     star.textContent = '★';
     star.style.animationDelay = `${i * 0.35}s`;
     stars.appendChild(star);
+  }
+  if (summary.boss) {
+    stars.hidden = true;
   }
 
   // Uložené maximum (když byl hráč dřív lepší, pochval se za něj).
@@ -53,6 +56,8 @@ export function createEvaluationScreen(container, { summary, granted, nextLabel 
     crystalText.textContent = `Získáváš ${summary.crystalColor} krystal!`;
   } else if (granted.bonusGranted) {
     crystalText.textContent = `Bonusový krystal za 3 hvězdy (${summary.crystalColor})!`;
+  } else if (summary.boss) {
+    crystalText.textContent = 'Krystal z tohoto souboje už máš.';
   } else {
     crystalText.textContent = 'Krystal z této mise už máš. Zkus to na 3 hvězdy pro bonus!';
   }

@@ -9,8 +9,9 @@
 
 import { createBrowserSaveStore } from './engine/save.js';
 import { createScreenMachine, initialScreenFor, SCREENS } from './engine/screens.js';
-import { createMission } from './engine/mission.js';
+import { createMission, createBossMission } from './engine/mission.js';
 import { applyMissionResult } from './engine/progress.js';
+import { hasSword } from './content/crafting.js';
 import { createIntroScreen } from './ui/introScreen.js';
 import { createMapScreen } from './ui/mapScreen.js';
 import { createMissionScreen } from './ui/missionScreen.js';
@@ -66,13 +67,20 @@ function render(screen, context = {}) {
     });
     screenCleanup = () => screen_.destroy();
   } else if (screen === SCREENS.MAP) {
-    const screen_ = createMapScreen(el, { state, onStartMission: startMission });
+    const screen_ = createMapScreen(el, {
+      state,
+      onStartMission: startMission,
+      onStateChanged: () => store.save(state),
+    });
     screenCleanup = () => screen_.destroy();
   } else if (screen === SCREENS.MISSION) {
     const missionConfig = getMission(context.missionId);
-    const mission = createMission({ ...missionConfig, seed: missionSeed(context.missionId) });
+    const mission = missionConfig.boss
+      ? createBossMission({ ...missionConfig, seed: missionSeed(context.missionId) })
+      : createMission({ ...missionConfig, seed: missionSeed(context.missionId) });
     const screen_ = createMissionScreen(el, {
       mission,
+      hasSword: hasSword(state),
       onExit: () => machine.go(SCREENS.MAP),
       onFinish: (summary) => {
         const granted = applyMissionResult(state, summary);

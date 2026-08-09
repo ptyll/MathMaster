@@ -14,14 +14,16 @@ import {
   totalCrystals,
 } from '../engine/unlock.js';
 import { createPlanetArt, createStarfield } from './planetArt.js';
+import { createInventoryOverlay, createWorkshopOverlay } from './workshopScreen.js';
 
 /**
  * @param {HTMLElement} container
  * @param {object} options
  * @param {object} options.state herní stav
  * @param {(missionId: string) => void} options.onStartMission
+ * @param {() => void} [options.onStateChanged] po změně stavu (crafting) - pro uložení
  */
-export function createMapScreen(container, { state, onStartMission }) {
+export function createMapScreen(container, { state, onStartMission, onStateChanged }) {
   const root = document.createElement('div');
   root.className = 'map';
 
@@ -36,10 +38,49 @@ export function createMapScreen(container, { state, onStartMission }) {
   const name = document.createElement('span');
   name.className = 'map-player-name';
   name.textContent = state.profile?.name ?? 'Padawan';
-  const crystals = document.createElement('span');
-  crystals.className = 'map-crystals';
-  crystals.textContent = `💎 ${totalCrystals(state)}`;
-  panel.append(name, crystals);
+  const crystalsBtn = document.createElement('button');
+  crystalsBtn.type = 'button';
+  crystalsBtn.className = 'btn btn-ghost btn-crystals';
+  crystalsBtn.textContent = `💎 ${totalCrystals(state)}`;
+  crystalsBtn.setAttribute('aria-label', 'Inventář krystalů');
+  const workshopBtn = document.createElement('button');
+  workshopBtn.type = 'button';
+  workshopBtn.className = 'btn btn-ghost';
+  workshopBtn.textContent = '🔧 Dílna';
+  panel.append(name, crystalsBtn, workshopBtn);
+
+  // Overlaye inventáře a dílny
+  let overlay = null;
+  const closeOverlay = () => {
+    if (overlay) {
+      overlay.destroy();
+      overlay = null;
+    }
+  };
+  crystalsBtn.addEventListener('click', () => {
+    closeOverlay();
+    overlay = createInventoryOverlay(root, {
+      state,
+      onClose: () => {
+        overlay = null;
+        crystalsBtn.focus();
+      },
+    });
+  });
+  workshopBtn.addEventListener('click', () => {
+    closeOverlay();
+    overlay = createWorkshopOverlay(root, {
+      state,
+      onCrafted: () => {
+        onStateChanged?.();
+        crystalsBtn.textContent = `💎 ${totalCrystals(state)}`; // refresh po spotřebování
+      },
+      onClose: () => {
+        overlay = null;
+        workshopBtn.focus();
+      },
+    });
+  });
 
   // --- Mistr Jedi stav ---
   if (isMasterJedi(state, PLANETS)) {
@@ -138,6 +179,7 @@ export function createMapScreen(container, { state, onStartMission }) {
   return {
     element: root,
     destroy() {
+      closeOverlay();
       root.remove();
     },
   };

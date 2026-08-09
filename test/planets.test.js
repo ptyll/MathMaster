@@ -97,7 +97,7 @@ test('planetStars a planetMaxStars', () => {
   const state = createDefaultState();
   const planet = PLANETS[0];
   assert.equal(planetStars(state, planet), 0);
-  assert.equal(planetMaxStars(planet), planet.missions.length * 3);
+  assert.equal(planetMaxStars(planet), (planet.missions.length - 1) * 3 + 1); // boss dává 1
   completeMission(state, planet.id, planet.missions[0].id, 3);
   completeMission(state, planet.id, planet.missions[1].id, 2);
   assert.equal(planetStars(state, planet), 5);

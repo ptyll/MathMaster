@@ -5,7 +5,7 @@
  */
 
 import { createAnswerInput } from './answerInput.js';
-import { createAvatar } from './avatar.js';
+import { createAvatar, createBossArt } from './avatar.js';
 import { createSolutionViewer } from './solutionViewer.js';
 
 /**
@@ -16,16 +16,17 @@ import { createSolutionViewer } from './solutionViewer.js';
  * @param {(summary: object) => void} options.onFinish dokončení mise
  * @returns {{ destroy: () => void }}
  */
-export function createMissionScreen(container, { mission, onExit, onFinish }) {
+export function createMissionScreen(container, { mission, onExit, onFinish, hasSword = false }) {
+  const isBoss = !!mission.isBoss;
   const root = document.createElement('div');
-  root.className = 'mission';
+  root.className = 'mission' + (isBoss ? ' boss-fight' : '');
 
   // Skrytý nadpis pro focus management a screen reader.
   const h1 = document.createElement('h1');
   h1.className = 'visually-hidden';
   h1.textContent = mission.config.title ?? 'Mise';
 
-  // --- Hlavička: postup + opuštění ---
+  // --- Hlavička: postup (nebo boss HP) + opuštění ---
   const header = document.createElement('div');
   header.className = 'mission-header';
   const progressEl = document.createElement('span');
@@ -36,10 +37,24 @@ export function createMissionScreen(container, { mission, onExit, onFinish }) {
   exitBtn.textContent = 'Zpět na mapu';
   header.append(progressEl, exitBtn);
 
+  // --- Boss panel (HP + štíty) ---
+  let bossHpBar = null;
+  let shieldsEl = null;
+  let bossArt = null;
+  if (isBoss) {
+    bossArt = createBossArt();
+    bossHpBar = document.createElement('div');
+    bossHpBar.className = 'boss-hp';
+    bossHpBar.setAttribute('role', 'img');
+    shieldsEl = document.createElement('div');
+    shieldsEl.className = 'player-shields';
+    shieldsEl.setAttribute('role', 'img');
+  }
+
   // --- Avatar + příklad ---
   const stage = document.createElement('div');
   stage.className = 'mission-stage';
-  const avatar = createAvatar();
+  const avatar = createAvatar({ saber: hasSword });
 
   const card = document.createElement('div');
   card.className = 'mission-card';
@@ -68,13 +83,21 @@ export function createMissionScreen(container, { mission, onExit, onFinish }) {
   const inputHost = document.createElement('div');
   inputHost.className = 'mission-input';
 
-  // --- Přeskočit ---
+  // --- Přeskočit (u bosse není - souboj se nedá přeskočit) ---
   const skipBtn = document.createElement('button');
   skipBtn.type = 'button';
   skipBtn.className = 'btn btn-ghost';
   skipBtn.textContent = 'Přeskočit';
 
   root.append(h1, header, stage, stepsPanel, inputHost, hintBtn, skipBtn);
+  if (isBoss) {
+    // Boss: HP lišta nahoře, boss postava do stage, štíty hráče
+    stage.prepend(bossArt);
+    header.prepend(bossHpBar);
+    header.insertBefore(shieldsEl, exitBtn);
+    progressEl.hidden = true;
+    skipBtn.hidden = true;
+  }
   container.appendChild(root);
 
   let input = null;
@@ -104,6 +127,24 @@ export function createMissionScreen(container, { mission, onExit, onFinish }) {
   }
 
   function renderProgress() {
+    if (isBoss) {
+      bossHpBar.innerHTML = '';
+      bossHpBar.setAttribute('aria-label', `Boss HP: ${mission.hp} z ${mission.maxHp}`);
+      for (let i = 0; i < mission.maxHp; i++) {
+        const cell = document.createElement('span');
+        cell.className = 'boss-hp-cell' + (i < mission.hp ? ' full' : '');
+        bossHpBar.appendChild(cell);
+      }
+      shieldsEl.innerHTML = '';
+      shieldsEl.setAttribute('aria-label', `Štíty: ${mission.shields} ze 3`);
+      for (let i = 0; i < 3; i++) {
+        const shield = document.createElement('span');
+        shield.className = 'shield' + (i < mission.shields ? ' full' : '');
+        shield.textContent = '🛡';
+        shieldsEl.appendChild(shield);
+      }
+      return;
+    }
     const { current, total } = mission.progress;
     progressEl.textContent = `Příklad ${current}/${total}`;
   }
@@ -178,8 +219,21 @@ export function createMissionScreen(container, { mission, onExit, onFinish }) {
     if (outcome.outcome === 'correct') {
       accepting = false; // během pauzy se nepřijímá nic - ani skip, ani další klik
       avatar.react('correct');
-      feedback.textContent =
-        result.status === 'correct-unsimplified' ? result.note : 'Správně! Krystal je blíž.';
+      if (isBoss && bossArt) {
+        bossArt.classList.remove('boss-hit');
+        void bossArt.offsetWidth;
+        bossArt.classList.add('boss-hit');
+        feedback.textContent =
+          result.status === 'correct-unsimplified' && result.note
+            ? result.note
+            : outcome.missionDone
+              ? 'Zásah! Boss padá!'
+              : 'Zásah mečem! Správně!';
+      } else {
+        feedback.textContent =
+          result.status === 'correct-unsimplified' ? result.note : 'Správně! Krystal je blíž.';
+      }
+      renderProgress(); // boss HP se překreslí hned, ne až s dalším příkladem
       if (outcome.missionDone) {
         timer = setTimeout(() => {
           timer = null;
@@ -198,13 +252,21 @@ export function createMissionScreen(container, { mission, onExit, onFinish }) {
 
     // Špatně - nic se neodebírá, jen se sníží hvězdy na konci.
     avatar.react('wrong');
+    renderProgress(); // štíty se překreslí hned
     if (mission.shouldOfferHint) {
       hintBtn.classList.add('attention');
     }
     if (outcome.showSteps) {
       // Po 2. chybě u stejného příkladu automaticky krokové vysvětlení (UCV-LEARN-001).
-      feedback.textContent = 'Koukneme se na to krok za krokem:';
+      feedback.textContent =
+        isBoss && outcome.healed
+          ? 'Boss se uzdravil na polovinu HP! Koukneme se na to krok za krokem:'
+          : 'Koukneme se na to krok za krokem:';
       openSolutionViewer();
+    } else if (isBoss && outcome.healed) {
+      feedback.textContent = 'Boss tě srazil a uzdravil se na polovinu HP! Nevzdávej to!';
+    } else if (isBoss) {
+      feedback.textContent = 'Bossův protiútok! Ztrácíš štít.';
     } else {
       feedback.textContent = 'To není ono - zkus to znovu.';
     }
@@ -249,18 +311,20 @@ export function createMissionScreen(container, { mission, onExit, onFinish }) {
     onExit();
   });
 
-  skipBtn.addEventListener('click', () => {
-    if (!accepting) {
-      return;
-    }
-    const result = mission.skip();
-    if (result.missionDone) {
-      destroy();
-      onFinish(mission.getSummary());
-    } else {
-      renderExercise();
-    }
-  });
+  if (!isBoss) {
+    skipBtn.addEventListener('click', () => {
+      if (!accepting) {
+        return;
+      }
+      const result = mission.skip();
+      if (result.missionDone) {
+        destroy();
+        onFinish(mission.getSummary());
+      } else {
+        renderExercise();
+      }
+    });
+  }
 
   renderExercise();
 

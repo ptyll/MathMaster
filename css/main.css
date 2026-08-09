@@ -846,3 +846,188 @@ p {
   .master-jedi { animation: none; }
   .confetti { display: none; }
 }
+
+/* --- Odměny, crafting, boss (fáze 7) --- */
+
+/* Světlá čepel avatara */
+.saber-blade {
+  filter: drop-shadow(0 0 4px #6fd3ff);
+  animation: saber-glow 1.6s ease-in-out infinite;
+}
+
+@keyframes saber-glow {
+  0%, 100% { filter: drop-shadow(0 0 3px #6fd3ff); }
+  50% { filter: drop-shadow(0 0 9px #6fd3ff); }
+}
+
+/* Boss souboj */
+.boss-fight .mission-stage {
+  align-items: center;
+}
+
+.boss-art {
+  transition: transform 0.15s;
+}
+
+.boss-hit {
+  animation: boss-hit 0.4s ease;
+}
+
+@keyframes boss-hit {
+  0% { transform: translateX(0); filter: brightness(1); }
+  30% { transform: translateX(14px); filter: brightness(2); }
+  100% { transform: translateX(0); filter: brightness(1); }
+}
+
+.boss-blade {
+  filter: drop-shadow(0 0 4px #ff4d4d);
+}
+
+.boss-hp {
+  display: flex;
+  gap: 4px;
+}
+
+.boss-hp-cell {
+  width: 28px;
+  height: 16px;
+  border-radius: 4px;
+  background: #3a4166;
+}
+
+.boss-hp-cell.full {
+  background: #ff4d4d;
+  box-shadow: 0 0 6px rgba(255, 77, 77, 0.6);
+}
+
+.player-shields {
+  display: flex;
+  gap: 4px;
+  font-size: 1.4rem;
+}
+
+.shield {
+  opacity: 0.25;
+  filter: grayscale(1);
+}
+
+.shield.full {
+  opacity: 1;
+  filter: none;
+}
+
+/* Inventář krystalů */
+.overlay-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+}
+
+.inventory-empty {
+  color: var(--color-text-dim);
+  text-align: center;
+}
+
+.crystal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 0.75rem;
+}
+
+.crystal-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.5rem;
+}
+
+.crystal-cell.empty {
+  opacity: 0.35;
+}
+
+.crystal-cell .crystal {
+  width: 34px;
+  height: 44px;
+  animation: none;
+}
+
+.crystal-bílý { background: linear-gradient(160deg, #ffffff, #8fb8d8); }
+.crystal-zelený { background: linear-gradient(160deg, #9fe8a8, #2b8a3e); }
+.crystal-červený { background: linear-gradient(160deg, #ff9c9c, #b02b2b); }
+.crystal-fialový { background: linear-gradient(160deg, #d5a6ff, #6b2bb0); }
+
+.crystal-count {
+  font-weight: 700;
+}
+
+.crystal-name {
+  color: var(--color-text-dim);
+  font-size: 0.9rem;
+}
+
+.crystal-source {
+  color: var(--color-text-dim);
+  font-size: 0.75rem;
+}
+
+/* Dílna */
+.workshop-status {
+  text-align: center;
+  font-weight: 600;
+  margin: 0;
+}
+
+.parts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.part-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.9rem;
+  flex-wrap: wrap;
+}
+
+.part-row.crafted {
+  outline: 2px solid #7ee08c;
+}
+
+.part-row.locked {
+  opacity: 0.65;
+}
+
+.part-name {
+  font-weight: 700;
+  min-width: 120px;
+}
+
+.part-requirements {
+  color: var(--color-text-dim);
+  font-size: 0.9rem;
+  flex: 1;
+}
+
+.part-done {
+  color: #7ee08c;
+  font-weight: 700;
+}
+
+.part-missing {
+  color: #ffb04d;
+  font-size: 0.85rem;
+}
+
+.btn-craft {
+  padding: 0.4rem 1.25rem;
+  font-size: 1rem;
+  min-height: 48px;
+}

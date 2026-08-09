@@ -17,7 +17,7 @@ export const PLANETS = [
       { id: 'tatooine-1', title: 'První kroky', topic: 'equations', startDifficulty: 1, exerciseCount: 5 },
       { id: 'tatooine-2', title: 'Pouštní výzva', topic: 'equations', startDifficulty: 2, exerciseCount: 6 },
       { id: 'tatooine-3', title: 'Dvojité slunce', topic: 'equations', startDifficulty: 2, exerciseCount: 7 },
-      { id: 'tatooine-boss', title: 'Inkvizitor z pouště', topic: 'equations', startDifficulty: 3, exerciseCount: 7, boss: true },
+      { id: 'tatooine-boss', title: 'Inkvizitor z pouště', topic: 'equations', startDifficulty: 3, boss: true },
     ],
   },
   {
@@ -30,7 +30,7 @@ export const PLANETS = [
       { id: 'hoth-1', title: 'Ledový start', topic: 'equations', startDifficulty: 3, exerciseCount: 5 },
       { id: 'hoth-2', title: 'Zamrzlé závorky', topic: 'equations', startDifficulty: 3, exerciseCount: 6 },
       { id: 'hoth-3', title: 'Sněhová vánice', topic: 'equations', startDifficulty: 4, exerciseCount: 7 },
-      { id: 'hoth-boss', title: 'Inkvizitor z ledu', topic: 'equations', startDifficulty: 4, exerciseCount: 7, boss: true },
+      { id: 'hoth-boss', title: 'Inkvizitor z ledu', topic: 'equations', startDifficulty: 4, boss: true },
     ],
   },
   {
@@ -43,7 +43,7 @@ export const PLANETS = [
       { id: 'dagobah-1', title: 'Zlomková bažina', topic: 'fractions', startDifficulty: 1, exerciseCount: 5 },
       { id: 'dagobah-2', title: 'Mistrovství krácení', topic: 'fractions', startDifficulty: 2, exerciseCount: 6 },
       { id: 'dagobah-3', title: 'Síla společného jmenovatele', topic: 'fractions', startDifficulty: 3, exerciseCount: 7 },
-      { id: 'dagobah-boss', title: 'Inkvizitor z bažiny', topic: 'fractions', startDifficulty: 3, exerciseCount: 7, boss: true },
+      { id: 'dagobah-boss', title: 'Inkvizitor z bažiny', topic: 'fractions', startDifficulty: 3, boss: true },
     ],
   },
   {
@@ -55,7 +55,7 @@ export const PLANETS = [
     missions: [
       { id: 'deathstar-1', title: 'Nástup na stanici', topic: 'fractionEquations', startDifficulty: 1, exerciseCount: 5 },
       { id: 'deathstar-2', title: 'Reaktorové chodby', topic: 'fractionEquations', startDifficulty: 2, exerciseCount: 6 },
-      { id: 'deathstar-boss', title: 'Temný lord', topic: 'fractionEquations', startDifficulty: 3, exerciseCount: 8, boss: true },
+      { id: 'deathstar-boss', title: 'Temný lord', topic: 'fractionEquations', startDifficulty: 3, boss: true },
     ],
   },
   {
@@ -67,7 +67,7 @@ export const PLANETS = [
     missions: [
       { id: 'coruscant-1', title: 'Městká džungle', topics: ['equations', 'fractions'], startDifficulty: 2, exerciseCount: 6 },
       { id: 'coruscant-2', title: 'Výškové výzvy', topics: ['equations', 'fractions', 'fractionEquations'], startDifficulty: 3, exerciseCount: 7 },
-      { id: 'coruscant-boss', title: 'Velký mistr', topics: ['equations', 'fractions', 'fractionEquations'], startDifficulty: 4, exerciseCount: 9, boss: true },
+      { id: 'coruscant-boss', title: 'Velký mistr', topics: ['equations', 'fractions', 'fractionEquations'], startDifficulty: 4, boss: true },
     ],
   },
 ];

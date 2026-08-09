@@ -164,3 +164,134 @@ export function createMission(config) {
 
   return mission;
 }
+
+/**
+ * Boss souboj (UCV-BOSS-001): boss má HP, hráč 3 štíty. Správná odpověď
+ * = -1 HP bossovi, špatná = -1 štít. Ztráta všech štítů = boss se uzdraví
+ * na polovinu HP a souboj pokračuje (žádný game over). Příklady se generují
+ * do nekonečna, dokud boss nepadne. Žádné hvězdy - jen výhra.
+ */
+export function createBossMission(config) {
+  const maxHp = 5;
+  let hp = maxHp;
+  let shields = 3;
+  let healedCount = 0;
+  let index = 0;
+  let mistakes = 0;
+  let solvedCount = 0;
+  let hintsUsed = 0;
+  let hintUsedOnCurrent = false;
+  let history = [];
+  let currentDifficulty = config.startDifficulty;
+  let attemptsOnCurrent = 0;
+  let wrongOnCurrent = 0;
+  let done = false;
+  let firstTryCount = 0;
+  let current = null;
+
+  function spawn() {
+    const topic = config.topics ? config.topics[index % config.topics.length] : config.topic;
+    current = generateForTopic(topic, config.seed + index * 101, currentDifficulty, index);
+    attemptsOnCurrent = 0;
+    wrongOnCurrent = 0;
+    hintUsedOnCurrent = false;
+  }
+  spawn();
+
+  const boss = {
+    get config() {
+      return config;
+    },
+    get isBoss() {
+      return true;
+    },
+    get currentExercise() {
+      return current;
+    },
+    get hp() {
+      return hp;
+    },
+    get maxHp() {
+      return maxHp;
+    },
+    get shields() {
+      return shields;
+    },
+    get isDone() {
+      return done;
+    },
+    get shouldShowSteps() {
+      return wrongOnCurrent === 2;
+    },
+    get shouldOfferHint() {
+      return shouldOfferHint(history);
+    },
+
+    useHint() {
+      if (!hintUsedOnCurrent) {
+        hintUsedOnCurrent = true;
+        hintsUsed++;
+      }
+    },
+
+    recordAnswer(status) {
+      attemptsOnCurrent++;
+      if (status === 'wrong') {
+        wrongOnCurrent++;
+        mistakes++;
+        history.push({ correct: false, hintUsed: hintUsedOnCurrent });
+        shields--;
+        let healed = false;
+        if (shields <= 0) {
+          // Boss se uzdraví na polovinu, štíty se obnoví - žádný game over.
+          hp = Math.max(hp, Math.ceil(maxHp / 2));
+          shields = 3;
+          healedCount++;
+          healed = true;
+        }
+        return {
+          outcome: 'wrong',
+          missionDone: false,
+          showSteps: boss.shouldShowSteps,
+          healed,
+          hp,
+          shields,
+        };
+      }
+      if (attemptsOnCurrent === 1) {
+        firstTryCount++;
+      }
+      solvedCount++;
+      history.push({ correct: true, hintUsed: hintUsedOnCurrent });
+      hp--;
+      index++;
+      done = hp <= 0;
+      if (!done) {
+        currentDifficulty = nextDifficulty(history, currentDifficulty);
+        spawn();
+      }
+      return { outcome: 'correct', missionDone: done, healed: false, hp, shields };
+    },
+
+    getSummary() {
+      return {
+        missionId: config.id,
+        planetId: config.planetId,
+        crystalColor: config.crystalColor,
+        topic: config.topic ?? null,
+        topics: config.topics ?? [config.topic],
+        boss: true,
+        stars: 1, // boss nemá hvězdy - 1 slouží jen jako značka 'dokončeno' pro odemykání
+        mistakes,
+        firstTryCount,
+        solved: solvedCount,
+        total: solvedCount + mistakes,
+        hintsUsed,
+        healedCount,
+        recommendEasier: false,
+      };
+    },
+  };
+
+  return boss;
+}

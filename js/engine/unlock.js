@@ -32,9 +32,9 @@ export function planetStars(state, planet) {
   return planet.missions.reduce((sum, m) => sum + starsFor(state, planet.id, m.id), 0);
 }
 
-/** Maximální možný počet hvězd planety. */
+/** Maximální možný počet hvězd planety (boss mise dává jen 1 - značku výhry). */
 export function planetMaxStars(planet) {
-  return planet.missions.length * 3;
+  return planet.missions.reduce((sum, m) => sum + (m.boss ? 1 : 3), 0);
 }
 
 /** Všechny planety dokončené -> stav 'Mistr Jedi'. */

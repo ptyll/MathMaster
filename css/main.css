@@ -1498,3 +1498,11 @@ p {
     padding: 0.1rem 0;
   }
 }
+
+/* Zvolená operace mezi předchozím a novým tvarem rovnice */
+.step-operation-chip {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--color-accent);
+}

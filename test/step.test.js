@@ -516,6 +516,17 @@ test('mise umí vygenerovat všechny tvary rovnic včetně závorek a x na obou 
   assert.ok(forms.has('ax+b=cx+d'), 'x na obou stranách musí jít vygenerovat');
 });
 
+test('mise nesahají po obtížnosti se závorkami, dokud ji krokový režim neumí', async () => {
+  const { PLANETS } = await import('../js/content/planets.js');
+  // Generátor drží a(x+b)=c už roznásobené, takže by krokový režim závorku
+  // nikdy nezobrazil. Než přibude faktorizovaný tvar, mise stupeň 5 nezadávají.
+  for (const planet of PLANETS) {
+    for (const mission of planet.missions) {
+      assert.notEqual(mission.startDifficulty, 5, `${mission.id} startuje na stupni se závorkami`);
+    }
+  }
+});
+
 test('rovnice s x na obou stranách se dá vyřešit odečtením x-členu', () => {
   const ex = generateLinearEquation(4242, 4);
   assert.equal(ex.form, 'ax+b=cx+d');

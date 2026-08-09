@@ -39,6 +39,12 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
   historyEl.className = 'step-history';
   historyEl.setAttribute('aria-label', 'Provedené kroky');
 
+  // Zvolená operace během dopočítávání. Bez ní si hráč musí pamatovat,
+  // co vlastně zadal - a přesně tomu má krokový režim předcházet.
+  const opChip = document.createElement('p');
+  opChip.className = 'step-operation-chip';
+  opChip.hidden = true;
+
   // --- Aktuální stav rovnice / úlohy ---
   const stateEl = document.createElement('p');
   stateEl.className = 'step-equation';
@@ -102,7 +108,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
   // vpravo čím pokračuje. Na úzké obrazovce se jen složí pod sebe.
   const leftCol = document.createElement('div');
   leftCol.className = 'step-col step-col-state';
-  leftCol.append(historyEl, stateEl, vizHost, vizNote);
+  leftCol.append(historyEl, opChip, stateEl, vizHost, vizNote);
 
   const rightCol = document.createElement('div');
   rightCol.className = 'step-col step-col-controls';
@@ -207,6 +213,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
   function renderOperationPhase() {
     stateEl.textContent = session.equationText;
     promptEl.textContent = 'Co uděláš s oběma stranami?';
+    opChip.hidden = true;
     opRow.hidden = false;
     termToggle.hidden = false;
     backBtn.hidden = !session.canUndo;
@@ -247,6 +254,14 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
     const preview = session.pendingPreview;
     stateEl.textContent = preview ? `${preview.left} = ${preview.right}` : session.equationText;
     promptEl.textContent = session.question ? session.question.prompt : '';
+
+    // Odvození musí být vidět celé: odkud jdu (poslední řádek cesty),
+    // co jsem zvolil (chip) a co z toho vyjde (rovnice s otazníkem).
+    // Cesta se proto ukáže i před prvním krokem, kdy nese zadání.
+    opChip.hidden = false;
+    opChip.textContent = `↓ ${session.pendingOperationText}`;
+    historyEl.hidden = false;
+
     opRow.hidden = true;
     termToggle.hidden = true;
     backBtn.hidden = false;
@@ -264,6 +279,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
 
   function renderFractionPhase() {
     stateEl.textContent = session.equationText;
+    opChip.hidden = true;
     promptEl.textContent = session.question ? session.question.prompt : '';
     opRow.hidden = true;
     termToggle.hidden = true;
@@ -285,6 +301,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
     if (session.isDone) {
       opRow.hidden = true;
       termToggle.hidden = true;
+      opChip.hidden = true;
       backBtn.hidden = true;
       destroyInput();
       inputHost.innerHTML = '';

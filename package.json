@@ -1,0 +1,10 @@
+{
+  "name": "mathmaster",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Výuková webová hra: rovnice a zlomky (vanilla JS, žádný build krok)",
+  "scripts": {
+    "test": "node --test test/"
+  }
+}

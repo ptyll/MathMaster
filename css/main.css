@@ -1,0 +1,107 @@
+/* MathMaster - základní responzivní layout (PC + tablet). */
+
+:root {
+  --color-bg: #0b1026;
+  --color-bg-panel: #161c3d;
+  --color-text: #eef1ff;
+  --color-text-dim: #9aa3c7;
+  --color-accent: #4da3ff;
+  --color-accent-hover: #6fb5ff;
+  --touch-target: 56px; /* min dotykový cíl dle plánu */
+  --radius: 12px;
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font);
+  font-size: 18px;
+  line-height: 1.5;
+}
+
+#app {
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  text-align: center;
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+h1 {
+  font-size: 2.25rem;
+  margin: 0;
+}
+
+p {
+  color: var(--color-text-dim);
+  margin: 0;
+  max-width: 46ch;
+}
+
+.btn {
+  min-height: var(--touch-target);
+  min-width: var(--touch-target);
+  padding: 0.75rem 2rem;
+  font-size: 1.25rem;
+  font-family: inherit;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  color: #06122b;
+  font-weight: 700;
+}
+
+.btn-primary:hover {
+  background: var(--color-accent-hover);
+}
+
+.btn:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+/* Fokus na nadpisu je jen programatický (přesun po přechodu obrazovky),
+   vizuální rámeček by vypadal jako chyba. */
+.screen h1:focus {
+  outline: none;
+}
+
+/* Menší displeje (tablety na výšku, telefony) */
+@media (max-width: 600px) {
+  body {
+    font-size: 16px;
+  }
+
+  h1 {
+    font-size: 1.75rem;
+  }
+}

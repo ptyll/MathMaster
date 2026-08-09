@@ -10,11 +10,16 @@
 
 import { createBrowserSaveStore } from './engine/save.js';
 import { createScreenMachine, initialScreenFor, SCREENS } from './engine/screens.js';
+import { createAnswerInput } from './ui/answerInput.js';
+import { generateLinearEquation } from './content/equations.js';
 
 const store = createBrowserSaveStore();
 const state = store.load() ?? store.createNew();
 
 const app = document.getElementById('app');
+
+/** Úklid aktuální obrazovky (destroy komponent, odposlechy) před překreslením. */
+let screenCleanup = null;
 
 const machine = createScreenMachine(initialScreenFor(state), (screen, context) => {
   render(screen, context);
@@ -22,6 +27,10 @@ const machine = createScreenMachine(initialScreenFor(state), (screen, context) =
 
 /** Vykreslí placeholder dané obrazovky. */
 function render(screen, context = {}) {
+  if (screenCleanup) {
+    screenCleanup();
+    screenCleanup = null;
+  }
   app.innerHTML = '';
   const el = document.createElement('section');
   el.className = `screen screen-${screen}`;
@@ -45,14 +54,45 @@ function render(screen, context = {}) {
       machine.go(SCREENS.MISSION, { missionId: 'test' });
     });
   } else if (screen === SCREENS.MISSION) {
-    el.innerHTML = `
-      <h1>Mise</h1>
-      <p>Zde poběží příklady (fáze 4).</p>
-      <button class="btn btn-primary" id="eval-btn">Dokončit misi</button>
-    `;
-    el.querySelector('#eval-btn').addEventListener('click', () => {
+    // Dočasné demo vstupních komponent (fáze 3) - skutečná mise je fáze 4.
+    const exercise = generateLinearEquation(7, 2);
+    const h1 = document.createElement('h1');
+    h1.textContent = 'Zkušební mise';
+    const text = document.createElement('p');
+    text.className = 'exercise-text';
+    text.textContent = exercise.text;
+    const feedback = document.createElement('p');
+    feedback.className = 'answer-feedback';
+    feedback.setAttribute('aria-live', 'polite');
+    el.append(h1, text, feedback);
+
+    const inputHost = document.createElement('div');
+    el.appendChild(inputHost);
+    const input = createAnswerInput(inputHost, {
+      expected: exercise.answer,
+      mode: 'int',
+      onSubmit: (result) => {
+        if (result.status === 'correct') {
+          feedback.textContent = 'Správně! Krystaly se blíží.';
+        } else if (result.status === 'correct-unsimplified') {
+          feedback.textContent = result.note;
+        } else if (result.status === 'invalid') {
+          feedback.textContent = result.note;
+        } else {
+          feedback.textContent = 'To není ono - zkus to znovu.';
+        }
+      },
+    });
+    screenCleanup = () => input.destroy();
+
+    const doneBtn = document.createElement('button');
+    doneBtn.type = 'button';
+    doneBtn.className = 'btn btn-primary';
+    doneBtn.textContent = 'Dokončit misi';
+    doneBtn.addEventListener('click', () => {
       machine.go(SCREENS.EVALUATION);
     });
+    el.appendChild(doneBtn);
   } else if (screen === SCREENS.EVALUATION) {
     el.innerHTML = `
       <h1>Vyhodnocení</h1>

@@ -105,3 +105,155 @@ p {
     font-size: 1.75rem;
   }
 }
+
+/* --- Vstup odpovědi: displej, zlomek, klávesnice (fáze 3) --- */
+
+.answer-input {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+}
+
+.answer-display {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.answer-sign {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  font-size: 2rem;
+  font-weight: 700;
+  background: var(--color-bg-panel);
+  color: var(--color-text-dim);
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.answer-sign.is-negative {
+  color: #ff8a8a;
+  border-color: #ff8a8a;
+}
+
+.fraction-fields {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.answer-field {
+  min-width: 96px;
+  min-height: var(--touch-target);
+  padding: 0.25rem 1rem;
+  font-size: 2rem;
+  font-weight: 700;
+  font-family: inherit;
+  text-align: center;
+  background: var(--color-bg-panel);
+  color: var(--color-text);
+  border: 3px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.answer-field.is-empty {
+  color: var(--color-text-dim);
+  border-style: dashed;
+  border-color: var(--color-text-dim);
+}
+
+.answer-field.is-active {
+  border-color: var(--color-accent);
+}
+
+.fraction-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--color-text);
+  border-radius: 2px;
+}
+
+.btn-toggle-mode {
+  min-height: var(--touch-target);
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  background: var(--color-bg-panel);
+  color: var(--color-accent);
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.answer-error {
+  color: #ffb04d;
+  font-weight: 600;
+  margin: 0;
+  min-height: 1.5em;
+}
+
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(72px, 1fr));
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 300px;
+}
+
+.keypad-key {
+  min-height: var(--touch-target);
+  font-size: 1.75rem;
+  font-weight: 700;
+  font-family: inherit;
+  background: var(--color-bg-panel);
+  color: var(--color-text);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.keypad-key:hover,
+.keypad-key:focus-visible {
+  background: #232b57;
+}
+
+.keypad-key:active {
+  background: var(--color-accent);
+  color: #06122b;
+}
+
+.btn-confirm {
+  width: 100%;
+  max-width: 300px;
+}
+
+.btn-confirm:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Na PC klávesnici trochu zmenšíme */
+@media (min-width: 900px) {
+  .keypad {
+    max-width: 260px;
+  }
+}
+
+.exercise-text {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.answer-feedback {
+  min-height: 1.5em;
+  font-weight: 600;
+  color: var(--color-accent);
+}

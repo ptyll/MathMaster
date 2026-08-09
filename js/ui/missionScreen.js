@@ -6,6 +6,7 @@
 
 import { createAnswerInput } from './answerInput.js';
 import { createAvatar } from './avatar.js';
+import { createSolutionViewer } from './solutionViewer.js';
 
 /**
  * @param {HTMLElement} container
@@ -51,10 +52,17 @@ export function createMissionScreen(container, { mission, onExit, onFinish }) {
   card.append(exerciseEl, feedback);
   stage.append(avatar.element, card);
 
-  // --- Kroky řešení (po 2. chybě) ---
+  // --- Kroky řešení / nápověda (text) ---
   const stepsPanel = document.createElement('div');
   stepsPanel.className = 'steps-panel';
   stepsPanel.hidden = true;
+
+  // --- Tlačítko nápovědy (UCV-LEARN-002) ---
+  const hintBtn = document.createElement('button');
+  hintBtn.type = 'button';
+  hintBtn.className = 'btn btn-hint';
+  hintBtn.textContent = '💡 Nápověda';
+  hintBtn.setAttribute('aria-label', 'Nápověda');
 
   // --- Vstup (klávesnice nebo výběr pro compare) ---
   const inputHost = document.createElement('div');
@@ -66,12 +74,34 @@ export function createMissionScreen(container, { mission, onExit, onFinish }) {
   skipBtn.className = 'btn btn-ghost';
   skipBtn.textContent = 'Přeskočit';
 
-  root.append(h1, header, stage, stepsPanel, inputHost, skipBtn);
+  root.append(h1, header, stage, stepsPanel, inputHost, hintBtn, skipBtn);
   container.appendChild(root);
 
   let input = null;
   let timer = null;       // feedback pauza mezi příklady - ruší se v destroy()
   let accepting = true;   // zámek vstupu během feedback pauzy (dvojklik, skip)
+  let hintLevel = 0;      // 0 = žádná, 1 = návod, 2 = první krok, 3 = celé řešení
+  let viewer = null;
+
+  function openSolutionViewer(startStep = 0, maxSteps = null) {
+    closeViewer();
+    viewer = createSolutionViewer(root, {
+      exercise: mission.currentExercise,
+      startStep,
+      maxSteps,
+      onClose: () => {
+        viewer = null;
+        hintBtn.focus();
+      },
+    });
+  }
+
+  function closeViewer() {
+    if (viewer) {
+      viewer.destroy();
+      viewer = null;
+    }
+  }
 
   function renderProgress() {
     const { current, total } = mission.progress;
@@ -95,6 +125,10 @@ export function createMissionScreen(container, { mission, onExit, onFinish }) {
     feedback.textContent = '';
     stepsPanel.hidden = true;
     stepsPanel.innerHTML = '';
+    hintLevel = 0;
+    hintBtn.textContent = '💡 Nápověda';
+    hintBtn.classList.remove('attention');
+    closeViewer();
     destroyInput();
     inputHost.innerHTML = '';
 
@@ -131,7 +165,8 @@ export function createMissionScreen(container, { mission, onExit, onFinish }) {
   }
 
   function handleResult(result) {
-    if (!accepting) {
+    if (!accepting || viewer) {
+      // viewer = otevřené krokové vysvětlení - vstup za ním nesmí reagovat
       return;
     }
     if (result.status === 'invalid') {
@@ -163,29 +198,51 @@ export function createMissionScreen(container, { mission, onExit, onFinish }) {
 
     // Špatně - nic se neodebírá, jen se sníží hvězdy na konci.
     avatar.react('wrong');
+    if (mission.shouldOfferHint) {
+      hintBtn.classList.add('attention');
+    }
     if (outcome.showSteps) {
+      // Po 2. chybě u stejného příkladu automaticky krokové vysvětlení (UCV-LEARN-001).
       feedback.textContent = 'Koukneme se na to krok za krokem:';
-      renderSteps(mission.currentExercise.steps);
+      openSolutionViewer();
     } else {
       feedback.textContent = 'To není ono - zkus to znovu.';
     }
   }
 
-  function renderSteps(steps) {
-    stepsPanel.innerHTML = '';
-    stepsPanel.hidden = false;
-    const list = document.createElement('ol');
-    for (const step of steps) {
-      const li = document.createElement('li');
-      const op = document.createElement('strong');
-      op.textContent = step.operation;
-      const eq = document.createElement('span');
-      eq.textContent = `  ${step.leftSide} = ${step.rightSide}`;
-      li.append(op, eq);
-      list.appendChild(li);
+  // Vrstvená nápověda: 1 = návod, 2 = první krok, 3 = celé řešení (UCV-LEARN-002).
+  hintBtn.addEventListener('click', () => {
+    if (!accepting) {
+      return;
     }
-    stepsPanel.appendChild(list);
-  }
+    mission.useHint();
+    hintBtn.classList.remove('attention');
+    hintLevel = Math.min(hintLevel + 1, 3);
+    const exercise = mission.currentExercise;
+
+    if (hintLevel === 1) {
+      stepsPanel.innerHTML = '';
+      const p = document.createElement('p');
+      p.textContent = exercise.hint;
+      stepsPanel.appendChild(p);
+      stepsPanel.hidden = false;
+      hintBtn.textContent = '💡 Víc pomoct';
+    } else if (hintLevel === 2) {
+      stepsPanel.innerHTML = '';
+      const first = exercise.steps[0];
+      const p = document.createElement('p');
+      const strong = document.createElement('strong');
+      strong.textContent = first.operation;
+      p.append(strong, document.createTextNode(`  ${first.leftSide} = ${first.rightSide}`));
+      stepsPanel.appendChild(p);
+      stepsPanel.hidden = false;
+      hintBtn.textContent = '💡 Ukaž celé řešení';
+    } else {
+      stepsPanel.hidden = true;
+      hintBtn.textContent = '💡 Nápověda';
+      openSolutionViewer();
+    }
+  });
 
   exitBtn.addEventListener('click', () => {
     destroy();
@@ -213,6 +270,7 @@ export function createMissionScreen(container, { mission, onExit, onFinish }) {
       timer = null;
     }
     accepting = false;
+    closeViewer();
     destroyInput();
     root.remove();
   }

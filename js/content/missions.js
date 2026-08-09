@@ -22,6 +22,15 @@ export const MISSIONS = [
     startDifficulty: 2,
     title: 'Pouštní výzva',
   },
+  {
+    id: 'dagobah-1',
+    planetId: 'dagobah',
+    crystalColor: 'zelený',
+    topic: 'fractions',
+    exerciseCount: 5,
+    startDifficulty: 1,
+    title: 'Zlomková bažina (demo)',
+  },
 ];
 
 export function getMission(id) {

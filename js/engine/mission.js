@@ -41,6 +41,8 @@ export function createMission(config) {
   let mistakes = 0;      // špatné odpovědi + přeskočení (pro hvězdy)
   let solvedCount = 0;   // skutečně vyřešené příklady (správná odpověď)
   let firstTryCount = 0;
+  let hintsUsed = 0;           // počet příkladů, u kterých hráč použil nápovědu
+  let hintUsedOnCurrent = false;
   let history = [];      // pro adaptivitu: { correct, hintUsed }
   let currentDifficulty = config.startDifficulty;
   let attemptsOnCurrent = 0;
@@ -51,6 +53,7 @@ export function createMission(config) {
     current = generateForTopic(config.topic, config.seed + index * 101, currentDifficulty, index);
     attemptsOnCurrent = 0;
     wrongOnCurrent = 0;
+    hintUsedOnCurrent = false;
   }
   spawn();
 
@@ -67,15 +70,23 @@ export function createMission(config) {
     get isDone() {
       return index >= config.exerciseCount;
     },
-    /** Po 2. chybě u stejného příkladu (nebo dle adaptivity) nabídnout kroky/nápovědu. */
+    /** Po 2. chybě u stejného příkladu nabídnout krokové vysvětlení (jen jednou). */
     get shouldShowSteps() {
-      return wrongOnCurrent >= 2;
+      return wrongOnCurrent === 2;
     },
     get shouldOfferHint() {
       return shouldOfferHint(history);
     },
     get attemptsOnCurrent() {
       return attemptsOnCurrent;
+    },
+
+    /** Zaznamená použití nápovědy u aktuálního příkladu (UCV-LEARN-002). */
+    useHint() {
+      if (!hintUsedOnCurrent) {
+        hintUsedOnCurrent = true;
+        hintsUsed++;
+      }
     },
 
     /**
@@ -88,7 +99,7 @@ export function createMission(config) {
       if (status === 'wrong') {
         wrongOnCurrent++;
         mistakes++;
-        history.push({ correct: false, hintUsed: false });
+        history.push({ correct: false, hintUsed: hintUsedOnCurrent });
         return {
           outcome: 'wrong',
           firstTry: false,
@@ -101,14 +112,14 @@ export function createMission(config) {
         firstTryCount++;
       }
       solvedCount++;
-      history.push({ correct: true, hintUsed: false });
+      history.push({ correct: true, hintUsed: hintUsedOnCurrent });
       return mission._advance({ outcome: 'correct', firstTry, showSteps: false });
     },
 
     /** Přeskočení příkladu - počítá se jako nezodpovězený (chyba pro hvězdy). */
     skip() {
       mistakes++;
-      history.push({ correct: false, hintUsed: false });
+      history.push({ correct: false, hintUsed: hintUsedOnCurrent });
       return mission._advance({ outcome: 'skipped', firstTry: false, showSteps: false });
     },
 
@@ -122,9 +133,9 @@ export function createMission(config) {
       return { ...result, missionDone };
     },
 
-    /** Hvězdy: 3 = vše napoprvé, 2 = max 2 chyby, 1 = dokončeno. */
+    /** Hvězdy: 3 = vše napoprvé bez nápověd, 2 = max 2 chyby, 1 = dokončeno. */
     getStars() {
-      if (mistakes === 0 && firstTryCount === config.exerciseCount) {
+      if (mistakes === 0 && firstTryCount === config.exerciseCount && hintsUsed === 0) {
         return 3;
       }
       return mistakes <= 2 ? 2 : 1;
@@ -141,6 +152,9 @@ export function createMission(config) {
         firstTryCount,
         solved: solvedCount,
         total: config.exerciseCount,
+        hintsUsed,
+        // Nápověda u všech příkladů -> doporučit lehčí mise (UCV-LEARN-002).
+        recommendEasier: hintsUsed >= config.exerciseCount,
       };
     },
   };

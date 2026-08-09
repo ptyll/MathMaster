@@ -62,6 +62,14 @@ export function createEvaluationScreen(container, { summary, granted, hasNextMis
   stats.className = 'eval-stats';
   stats.textContent = `Správně napoprvé: ${summary.firstTryCount}/${summary.total} · Chyby: ${summary.mistakes}`;
 
+  // Doporučení lehčích misí, když hráč použil nápovědu všude (UCV-LEARN-002).
+  let recommendNote = null;
+  if (summary.recommendEasier) {
+    recommendNote = document.createElement('p');
+    recommendNote.className = 'eval-recommend';
+    recommendNote.textContent = 'Nápověda ti dnes pomohla hodně - zkus si zopakovat lehčí mise, ať ti to pak jde samo.';
+  }
+
   // --- Tlačítka ---
   const actions = document.createElement('div');
   actions.className = 'eval-actions';
@@ -89,6 +97,9 @@ export function createEvaluationScreen(container, { summary, granted, hasNextMis
 
   actions.append(replayBtn, mapBtn);
   root.append(h1, stars, crystal, stats, actions);
+  if (recommendNote) {
+    root.insertBefore(recommendNote, actions);
+  }
   if (maxNote) {
     stats.appendChild(document.createElement('br'));
     stats.appendChild(maxNote);

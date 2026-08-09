@@ -30,10 +30,15 @@ test('řešení x/a = b použije násobení jmenovatelem', () => {
   assert.deepEqual(solvedValue(expr(1, 3, 0, 1), expr(0, 1, 7, 1)), { n: 21, d: 1 });
 });
 
-test('řešení se záporným koeficientem: 8 - x = 5', () => {
+test('řešení a - x = b jde přes "přičti x k oběma stranám" (bez záporných mezikroků)', () => {
   const steps = solveLinearSteps(expr(-1, 1, 8, 1), expr(0, 1, 5, 1));
-  assert.ok(steps.some((s) => s.operation.includes('-1')));
+  assert.equal(steps[0].operation, 'Přičti x k oběma stranám');
+  assert.equal(steps[0].leftSide, 'x + 5');
+  assert.equal(steps[0].rightSide, '8');
+  assert.ok(!steps.some((s) => s.operation.includes('-1')));
   assert.deepEqual(solvedValue(expr(-1, 1, 8, 1), expr(0, 1, 5, 1)), { n: 3, d: 1 });
+  // žádný mezikrok nesmí obsahovat záporné číslo -> váha, ne osa
+  assert.ok(!steps.some((s) => /(^|\s)-\d/.test(s.leftSide) || /(^|\s)-\d/.test(s.rightSide)));
 });
 
 test('zlomkový koeficient (2/3)x = 4 navrhne převrácenou hodnotu', () => {

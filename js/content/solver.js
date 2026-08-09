@@ -57,6 +57,12 @@ export function evaluateExpr(e, xValue) {
  * @returns {{operation: string, leftSide: string, rightSide: string, explanation: string}[]}
  */
 export function solveLinearSteps(left, right) {
+  // Didakticky lepší cesta u 'a - x = b': místo práce se záporným -x
+  // přesuneme x doprava ('Přičti x k oběma stranám') a řešíme prohozené strany.
+  if (left.x.n < 0 && right.x.n === 0) {
+    return solveLinearSteps(right, left);
+  }
+
   const steps = [];
   let l = { x: { ...left.x }, c: { ...left.c } };
   let r = { x: { ...right.x }, c: { ...right.c } };
@@ -73,14 +79,15 @@ export function solveLinearSteps(left, right) {
   // 1. Přesunout x-člen z pravé strany doleva.
   if (r.x.n !== 0) {
     const amount = { n: Math.abs(r.x.n), d: r.x.d };
+    const amountText = amount.n === 1 && amount.d === 1 ? 'x' : `${formatNumber(amount)}x`;
     const operation =
       r.x.n > 0
-        ? `Odečti ${formatNumber(amount)}x z obou stran`
-        : `Přičti ${formatNumber(amount)}x k oběma stranám`;
+        ? `Odečti ${amountText} z obou stran`
+        : `Přičti ${amountText} k oběma stranám`;
     const explanation =
       r.x.n > 0
-        ? 'Na váze odebereme stejnou váhu z obou misek - rovnováha zůstane.'
-        : 'Na váze přidáme stejnou váhu na obě misky - rovnováha zůstane.';
+        ? 'Stejnou hodnotu odebereme na obou stranách - rovnost zůstane platná.'
+        : 'Stejnou hodnotu přidáme na obou stranách - rovnost zůstane platná.';
     l.x = subtractFractions(l.x, r.x);
     r = expr(0, 1, r.c.n, r.c.d);
     push(operation, explanation);
@@ -95,8 +102,8 @@ export function solveLinearSteps(left, right) {
         : `Přičti ${formatNumber(amount)} k oběma stranám`;
     const explanation =
       l.c.n > 0
-        ? 'Stejný počet kostek odebereme z obou misek.'
-        : 'Stejný počet kostek přidáme na obě misky.';
+        ? 'Stejný počet jednotek odebereme na obou stranách.'
+        : 'Stejný počet jednotek přidáme na obou stranách.';
     r.c = subtractFractions(r.c, l.c);
     l = expr(l.x.n, l.x.d, 0, 1);
     push(operation, explanation);
@@ -112,11 +119,11 @@ export function solveLinearSteps(left, right) {
       r.c = multiplyFractions(r.c, makeFraction(-1));
     } else if (l.x.n === 1 && l.x.d > 1) {
       operation = `Vynásob obě strany ${l.x.d}`;
-      explanation = 'Násobení obou misek stejným číslem rovnováhu nenaruší.';
+      explanation = 'Násobení obou stran stejným číslem rovnost nenaruší.';
       r.c = multiplyFractions(r.c, makeFraction(l.x.d));
     } else if (isWhole(l.x)) {
       operation = `Vyděl obě strany ${formatNumber(l.x)}`;
-      explanation = 'Obě misky rozdělíme na stejný počet stejných dílů.';
+      explanation = 'Obě strany rozdělíme na stejný počet stejných dílů.';
       r.c = divideFractions(r.c, l.x);
     } else {
       const reciprocal = makeFraction(l.x.d, l.x.n);

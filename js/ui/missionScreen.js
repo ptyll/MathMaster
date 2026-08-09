@@ -320,7 +320,10 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
       feedback.textContent = result.note;
       return;
     }
-    const outcome = mission.recordAnswer(result.status === 'wrong' ? 'wrong' : 'correct');
+    const outcome = mission.recordAnswer(
+      result.status === 'wrong' ? 'wrong' : 'correct',
+      result.errorKind ?? null
+    );
 
     if (outcome.outcome === 'correct') {
       accepting = false; // během pauzy se nepřijímá nic - ani skip, ani další klik

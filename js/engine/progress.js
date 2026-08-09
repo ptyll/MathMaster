@@ -44,8 +44,18 @@ export function applyMissionResult(state, summary) {
     if (topicStats) {
       topicStats.solved += shareSolved;
       topicStats.attempts += shareAttempts;
+      // Druhy chyb pro rodičovský přehled (UCV-STATS-001). U mixované mise
+      // nevíme, ke kterému tématu chyba patřila - připíšeme ji všem tématům
+      // mise, protože přehled hledá vzorec, ne přesnou bilanci.
+      topicStats.errors ??= {};
+      for (const [kind, count] of Object.entries(summary.errors ?? {})) {
+        topicStats.errors[kind] = (topicStats.errors[kind] ?? 0) + count;
+      }
     }
   }
+
+  state.stats.missionsCompleted = (state.stats.missionsCompleted ?? 0) + 1;
+  state.stats.totalTimeMs = (state.stats.totalTimeMs ?? 0) + (summary.durationMs ?? 0);
 
   return {
     starsGranted: planet.starsPerLevel[summary.missionId],

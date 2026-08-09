@@ -15,6 +15,7 @@ import {
 } from '../engine/unlock.js';
 import { createPlanetArt, createStarfield } from './planetArt.js';
 import { createInventoryOverlay, createWorkshopOverlay } from './workshopScreen.js';
+import { createParentGate } from './parentGate.js';
 
 /**
  * @param {HTMLElement} container
@@ -22,8 +23,9 @@ import { createInventoryOverlay, createWorkshopOverlay } from './workshopScreen.
  * @param {object} options.state herní stav
  * @param {(missionId: string) => void} options.onStartMission
  * @param {() => void} [options.onStateChanged] po změně stavu (crafting) - pro uložení
+ * @param {() => void} [options.onParentArea] vstup do rodičovského přehledu (UCV-STATS-001)
  */
-export function createMapScreen(container, { state, onStartMission, onStateChanged }) {
+export function createMapScreen(container, { state, onStartMission, onStateChanged, onParentArea }) {
   const root = document.createElement('div');
   root.className = 'map';
 
@@ -48,6 +50,12 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
   workshopBtn.className = 'btn btn-ghost';
   workshopBtn.textContent = '🔧 Dílna';
   panel.append(name, crystalsBtn, workshopBtn);
+
+  // Rodičovská brána - drží se 3 s, aby na přehled nespadlo dítě omylem.
+  let parentGate = null;
+  if (onParentArea) {
+    parentGate = createParentGate(panel, { onUnlocked: onParentArea });
+  }
 
   // Overlaye inventáře a dílny
   let overlay = null;
@@ -180,6 +188,7 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
     element: root,
     destroy() {
       closeOverlay();
+      parentGate?.destroy();
       root.remove();
     },
   };

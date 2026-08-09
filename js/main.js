@@ -16,6 +16,7 @@ import { createIntroScreen } from './ui/introScreen.js';
 import { createMapScreen } from './ui/mapScreen.js';
 import { createMissionScreen } from './ui/missionScreen.js';
 import { createEvaluationScreen } from './ui/evaluationScreen.js';
+import { createStatsScreen } from './ui/statsScreen.js';
 import { getMission, getNextMission, isFinalMissionOfPlanet, getPlanet, PLANETS } from './content/planets.js';
 
 const store = createBrowserSaveStore();
@@ -71,6 +72,13 @@ function render(screen, context = {}) {
       state,
       onStartMission: startMission,
       onStateChanged: () => store.save(state),
+      onParentArea: () => machine.go(SCREENS.STATS),
+    });
+    screenCleanup = () => screen_.destroy();
+  } else if (screen === SCREENS.STATS) {
+    const screen_ = createStatsScreen(el, {
+      state,
+      onBack: () => machine.go(SCREENS.MAP),
     });
     screenCleanup = () => screen_.destroy();
   } else if (screen === SCREENS.MISSION) {

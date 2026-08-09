@@ -37,6 +37,9 @@ export function generateForTopic(topic, seed, difficulty, index = 0) {
  * @param {object} config { id, planetId, crystalColor, topic, exerciseCount, startDifficulty, seed }
  */
 export function createMission(config) {
+  const now = config.clock ?? (() => Date.now());
+  const startedAt = now();
+  const errors = {};     // { druhChyby: počet } pro rodičovský přehled
   let index = 0;
   let mistakes = 0;      // špatné odpovědi + přeskočení (pro hvězdy)
   let solvedCount = 0;   // skutečně vyřešené příklady (správná odpověď)
@@ -96,11 +99,16 @@ export function createMission(config) {
      * @param {'correct'|'correct-unsimplified'|'wrong'} status z model.evaluate()
      * @returns {{outcome: 'correct'|'wrong', firstTry: boolean, missionDone: boolean, showSteps: boolean}}
      */
-    recordAnswer(status) {
+    /**
+     * @param {'correct'|'correct-unsimplified'|'wrong'} status
+     * @param {string|null} [errorKind] druh chyby pro rodičovský přehled
+     */
+    recordAnswer(status, errorKind = null) {
       attemptsOnCurrent++;
       if (status === 'wrong') {
         wrongOnCurrent++;
         mistakes++;
+        countError(errorKind ?? 'arithmetic');
         history.push({ correct: false, hintUsed: hintUsedOnCurrent });
         return {
           outcome: 'wrong',
@@ -108,6 +116,10 @@ export function createMission(config) {
           missionDone: false,
           showSteps: mission.shouldShowSteps,
         };
+      }
+      if (errorKind) {
+        // Např. nezkrácený zlomek: odpověď se uznává, ale rodiče to zajímá.
+        countError(errorKind);
       }
       const firstTry = attemptsOnCurrent === 1;
       if (firstTry) {
@@ -125,13 +137,19 @@ export function createMission(config) {
      * záznam. Bez toho by krokový režim rozbil obojí.
      * @param {{mistakes: number}} outcome souhrn z relace
      */
-    recordStepResult({ mistakes: stepMistakes }) {
+    recordStepResult({ mistakes: stepMistakes, errors: stepErrors }) {
       attemptsOnCurrent++;
       const firstTry = stepMistakes === 0;
       if (firstTry) {
         firstTryCount++;
       } else {
         mistakes++;
+      }
+      // Druhy chyb se sčítají všechny - agregace na jednu chybu platí
+      // pro hvězdy, ne pro rodičovský přehled, kde jde právě o to, ČEHO
+      // se dítě dopouští.
+      for (const [kind, count] of Object.entries(stepErrors ?? {})) {
+        countError(kind, count);
       }
       solvedCount++;
       history.push({ correct: firstTry, hintUsed: hintUsedOnCurrent });
@@ -141,6 +159,7 @@ export function createMission(config) {
     /** Přeskočení příkladu - počítá se jako nezodpovězený (chyba pro hvězdy). */
     skip() {
       mistakes++;
+      countError('skipped');
       history.push({ correct: false, hintUsed: hintUsedOnCurrent });
       return mission._advance({ outcome: 'skipped', firstTry: false, showSteps: false });
     },
@@ -181,11 +200,20 @@ export function createMission(config) {
         solved: solvedCount,
         total: config.exerciseCount,
         hintsUsed,
+        errors: { ...errors },
+        durationMs: Math.max(0, now() - startedAt),
         // Nápověda u všech příkladů -> doporučit lehčí mise (UCV-LEARN-002).
         recommendEasier: hintsUsed >= config.exerciseCount,
       };
     },
   };
+
+  function countError(kind, count = 1) {
+    if (!kind) {
+      return;
+    }
+    errors[kind] = (errors[kind] ?? 0) + count;
+  }
 
   return mission;
 }
@@ -197,6 +225,9 @@ export function createMission(config) {
  * do nekonečna, dokud boss nepadne. Žádné hvězdy - jen výhra.
  */
 export function createBossMission(config) {
+  const now = config.clock ?? (() => Date.now());
+  const startedAt = now();
+  const errors = {};
   const maxHp = 5;
   let hp = maxHp;
   let shields = 3;
@@ -264,8 +295,11 @@ export function createBossMission(config) {
      * Chyby v krocích se agregují: hráč přijde nejvýš o jeden štít za
      * příklad, jinak by ho krokový souboj sundal během jediné rovnice.
      */
-    recordStepResult({ mistakes: stepMistakes }) {
+    recordStepResult({ mistakes: stepMistakes, errors: stepErrors }) {
       attemptsOnCurrent++;
+      for (const [kind, count] of Object.entries(stepErrors ?? {})) {
+        countError(kind, count);
+      }
       let healed = false;
       if (stepMistakes > 0) {
         mistakes++;
@@ -291,11 +325,12 @@ export function createBossMission(config) {
       return { outcome: 'correct', missionDone: done, healed, hp, shields };
     },
 
-    recordAnswer(status) {
+    recordAnswer(status, errorKind = null) {
       attemptsOnCurrent++;
       if (status === 'wrong') {
         wrongOnCurrent++;
         mistakes++;
+        countError(errorKind ?? 'arithmetic');
         history.push({ correct: false, hintUsed: hintUsedOnCurrent });
         shields--;
         let healed = false;
@@ -317,6 +352,9 @@ export function createBossMission(config) {
       }
       if (attemptsOnCurrent === 1) {
         firstTryCount++;
+      }
+      if (errorKind) {
+        countError(errorKind);
       }
       solvedCount++;
       history.push({ correct: true, hintUsed: hintUsedOnCurrent });
@@ -345,10 +383,19 @@ export function createBossMission(config) {
         total: solvedCount + mistakes,
         hintsUsed,
         healedCount,
+        errors: { ...errors },
+        durationMs: Math.max(0, now() - startedAt),
         recommendEasier: false,
       };
     },
   };
+
+  function countError(kind, count = 1) {
+    if (!kind) {
+      return;
+    }
+    errors[kind] = (errors[kind] ?? 0) + count;
+  }
 
   return boss;
 }

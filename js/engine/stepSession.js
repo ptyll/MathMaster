@@ -50,6 +50,11 @@ export function formatEquation(state) {
   return `${formatExpr(state.left)} = ${formatExpr(state.right)}`;
 }
 
+/** Stejná velikost, jiné znaménko - typická chyba se záporným číslem. */
+function sameMagnitude(a, b) {
+  return a.n !== 0 && Math.abs(a.n) * b.d === Math.abs(b.n) * a.d && a.n !== b.n;
+}
+
 /**
  * @param {object} exercise příklad z generátoru
  * @returns {object} relace; při isActive === false se příklad řeší zadáním výsledku
@@ -76,6 +81,10 @@ function createEquationSession(exercise) {
   let mistakesOnStep = 0;
   let noProgressStreak = 0;
   let done = false;
+  const errors = {};   // druhy chyb pro rodičovský přehled (UCV-STATS-001)
+  const countError = (kind) => {
+    errors[kind] = (errors[kind] ?? 0) + 1;
+  };
 
   // Rozpracovaná operace: hráč ji zvolil a teď dopočítává, co zbude.
   let pending = null;          // { operation, next, slots, slotIndex }
@@ -165,6 +174,9 @@ function createEquationSession(exercise) {
       if (verdict.status !== 'ok') {
         mistakes++;
         mistakesOnStep++;
+        // Špatně zvolená úprava je chyba ve strategii, ne v počítání -
+        // rodič z toho pozná, že dítě nechápe postup, ne že se přepočítalo.
+        countError('strategy');
         if (verdict.status === 'noProgress') {
           noProgressStreak++;
         }
@@ -196,6 +208,8 @@ function createEquationSession(exercise) {
       if (given === null || !fractionsEqual(given, expected)) {
         mistakes++;
         mistakesOnStep++;
+        // Operaci zvolil správně, jen dopočítal špatně.
+        countError(given !== null && sameMagnitude(given, expected) ? 'sign' : 'arithmetic');
         return { status: 'wrong', note: 'To nesedí - přepočítej to ještě jednou.' };
       }
 
@@ -226,7 +240,7 @@ function createEquationSession(exercise) {
     },
 
     getOutcome() {
-      return { solved: done, mistakes };
+      return { solved: done, mistakes, errors: { ...errors } };
     },
   };
 
@@ -293,6 +307,7 @@ function createFractionSession(exercise) {
   let mistakesOnStep = 0;
   let done = false;
   const history = [];
+  const errors = {};   // druhy chyb pro rodičovský přehled (UCV-STATS-001)
 
   /** Fáze: 'denominator' -> 'numerator-a' -> 'numerator-b' -> 'combine' -> 'simplify' */
   let phase = common === null ? 'denominator' : 'combine';
@@ -397,9 +412,13 @@ function createFractionSession(exercise) {
       if (given === null) {
         return { status: 'wrong', note: 'Napiš odpověď.' };
       }
-      const wrong = (note) => {
+      // Druh chyby se odvíjí od fáze - právě v tom je pro rodiče hodnota:
+      // něco jiného je neumět najít společného jmenovatele a něco jiného
+      // splést se ve sčítání čitatelů.
+      const wrong = (note, kind) => {
         mistakes++;
         mistakesOnStep++;
+        errors[kind] = (errors[kind] ?? 0) + 1;
         return { status: 'wrong', note };
       };
 
@@ -407,10 +426,10 @@ function createFractionSession(exercise) {
         // Uznáváme každý platný společný jmenovatel, nejen nejmenší -
         // jinak by režim byl frustrující (UCV-STEP-002).
         if (given.d !== 1 || given.n <= 0) {
-          return wrong('Společný jmenovatel je celé kladné číslo.');
+          return wrong('Společný jmenovatel je celé kladné číslo.', 'commonDenominator');
         }
         if (given.n % a.d !== 0 || given.n % b.d !== 0) {
-          return wrong(`Tímhle číslem nejde vydělit ${a.d} ani ${b.d}. Zkus jiné.`);
+          return wrong(`Tímhle číslem nejde vydělit ${a.d} ani ${b.d}. Zkus jiné.`, 'commonDenominator');
         }
         common = given.n;
         recomputeAfterDenominator();
@@ -426,7 +445,7 @@ function createFractionSession(exercise) {
         const index = phase === 'numerator-a' ? 0 : 1;
         const source = index === 0 ? a : b;
         if (given.d !== 1 || given.n !== numerators[index]) {
-          return wrong(`Kolikrát se ${source.d} vejde do ${common}? Tím vynásob čitatele.`);
+          return wrong(`Kolikrát se ${source.d} vejde do ${common}? Tím vynásob čitatele.`, 'expand');
         }
         history.push({
           operationText: `${formatNumber(source)} = ${numerators[index]}/${common}`,
@@ -440,7 +459,7 @@ function createFractionSession(exercise) {
       if (phase === 'combine') {
         const expected = operation === '+' ? numerators[0] + numerators[1] : numerators[0] - numerators[1];
         if (given.d !== 1 || given.n !== expected) {
-          return wrong('Jmenovatel zůstává stejný, pracuj jen s čitateli.');
+          return wrong('Jmenovatel zůstává stejný, pracuj jen s čitateli.', 'arithmetic');
         }
         combined = expected;
         history.push({ operationText: `${combined}/${common}`, equationText: '' });
@@ -457,10 +476,10 @@ function createFractionSession(exercise) {
       // simplify
       const expected = makeFraction(combined, common);
       if (!fractionsEqual(given, expected)) {
-        return wrong('To nesedí - zkus najít největšího společného dělitele.');
+        return wrong('To nesedí - zkus najít největšího společného dělitele.', 'arithmetic');
       }
       if (!isSimplified(given)) {
-        return wrong('Skoro! Ještě to jde zkrátit.');
+        return wrong('Skoro! Ještě to jde zkrátit.', 'unsimplified');
       }
       history.push({ operationText: `= ${formatNumber(expected)}`, equationText: '' });
       mistakesOnStep = 0;
@@ -472,7 +491,7 @@ function createFractionSession(exercise) {
     undo() {},
 
     getOutcome() {
-      return { solved: done, mistakes };
+      return { solved: done, mistakes, errors: { ...errors } };
     },
   };
 

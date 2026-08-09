@@ -192,7 +192,7 @@ export function createAnswerInput(
       submitted = true; // po správné odpovědi zamknout (dvojité klepnutí odešle jednou)
     }
     render();
-    onSubmit({ status: result.status, note: result.note, value: model.getValue() });
+    onSubmit({ status: result.status, note: result.note, errorKind: result.errorKind ?? null, value: model.getValue() });
   });
 
   // Hardwarová klávesnice na PC (Enter = potvrdit).

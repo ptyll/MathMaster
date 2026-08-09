@@ -3,7 +3,12 @@
  * Viz UCN-SAVE-001 a datový model v analýze.
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+
+/** Prázdné statistiky jednoho tématu. errors = { druhChyby: počet }. */
+function emptyTopicStats() {
+  return { solved: 0, attempts: 0, lastErrors: [], errors: {} };
+}
 
 /** Vytvoří výchozí herní stav pro nového hráče. */
 export function createDefaultState() {
@@ -18,10 +23,13 @@ export function createDefaultState() {
     stats: {
       totalSolved: 0,
       totalAttempts: 0,
+      // Rodičovský přehled (UCV-STATS-001) - schéma v2.
+      missionsCompleted: 0,
+      totalTimeMs: 0,
       perTopic: {
-        equations: { solved: 0, attempts: 0, lastErrors: [] },
-        fractions: { solved: 0, attempts: 0, lastErrors: [] },
-        fractionEquations: { solved: 0, attempts: 0, lastErrors: [] },
+        equations: emptyTopicStats(),
+        fractions: emptyTopicStats(),
+        fractionEquations: emptyTopicStats(),
       },
     },
     settings: {
@@ -47,10 +55,30 @@ export function migrate(data) {
   if (data.version > SCHEMA_VERSION) {
     return null;
   }
-  // Budoucí migrace: if (data.version === 1) { data = migrateV1toV2(data); }
   if (!isValidShape(data)) {
     return null;
   }
+  if (data.version === 1) {
+    data = migrateV1toV2(data);
+  }
+  return data;
+}
+
+/**
+ * v1 -> v2: rodičovský přehled potřebuje počty druhů chyb, odehraný čas
+ * a počet dokončených misí. Postup hráče zůstává nedotčený - doplňujeme
+ * jen chybějící pole, aby starý save nepřišel o hvězdy ani krystaly.
+ */
+function migrateV1toV2(data) {
+  const stats = data.stats;
+  stats.missionsCompleted ??= 0;
+  stats.totalTimeMs ??= 0;
+  for (const topic of ['equations', 'fractions', 'fractionEquations']) {
+    stats.perTopic[topic] ??= emptyTopicStats();
+    stats.perTopic[topic].errors ??= {};
+    stats.perTopic[topic].lastErrors ??= [];
+  }
+  data.version = 2;
   return data;
 }
 

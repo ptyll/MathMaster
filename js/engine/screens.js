@@ -8,14 +8,17 @@ export const SCREENS = Object.freeze({
   MAP: 'map',
   MISSION: 'mission',
   EVALUATION: 'evaluation',
+  STATS: 'stats',
 });
 
 /** Povolené přechody mezi obrazovkami. */
 const TRANSITIONS = Object.freeze({
   [SCREENS.INTRO]: [SCREENS.MAP],
-  [SCREENS.MAP]: [SCREENS.MISSION],
+  // Rodičovský přehled je slepá větev z mapy - vede z něj jen cesta zpět.
+  [SCREENS.MAP]: [SCREENS.MISSION, SCREENS.STATS],
   [SCREENS.MISSION]: [SCREENS.EVALUATION, SCREENS.MAP],
   [SCREENS.EVALUATION]: [SCREENS.MAP, SCREENS.MISSION],
+  [SCREENS.STATS]: [SCREENS.MAP],
 });
 
 /**

@@ -161,7 +161,13 @@ export function createAnswerModel(initialMode = INPUT_MODES.INT) {
       const givenD = mode === INPUT_MODES.FRACTION ? parseInt(denominator, 10) : 1;
 
       if (!fractionsEqual({ n: givenN, d: givenD }, expectedFraction)) {
-        return { status: 'wrong', note: null };
+        // Druh chyby pro rodičovský přehled (UCV-STATS-001): stejná
+        // velikost s jiným znaménkem je typicky chyba se záporným číslem,
+        // ne v počítání.
+        const sameSize =
+          givenN !== 0 &&
+          Math.abs(givenN) * expectedFraction.d === Math.abs(expectedFraction.n) * givenD;
+        return { status: 'wrong', note: null, errorKind: sameSize ? 'sign' : 'arithmetic' };
       }
       // 0/cokoliv je prostě 0 - u nuly krácení nedává smysl.
       if (
@@ -169,7 +175,11 @@ export function createAnswerModel(initialMode = INPUT_MODES.INT) {
         mode === INPUT_MODES.FRACTION &&
         !isSimplified({ n: givenN, d: givenD })
       ) {
-        return { status: 'correct-unsimplified', note: 'Správně! A jde to ještě zkrátit?' };
+        return {
+          status: 'correct-unsimplified',
+          note: 'Správně! A jde to ještě zkrátit?',
+          errorKind: 'unsimplified',
+        };
       }
       return { status: 'correct', note: null };
     },

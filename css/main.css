@@ -618,3 +618,231 @@ p {
     background: rgba(255, 217, 77, 0.18);
   }
 }
+
+/* --- Příběh, mapa, planety (fáze 6) --- */
+
+.intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.intro-story {
+  font-size: 1.2rem;
+  max-width: 52ch;
+}
+
+.intro-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 340px;
+}
+
+.intro-label {
+  font-weight: 600;
+  color: var(--color-text-dim);
+}
+
+.intro-input {
+  min-height: var(--touch-target);
+  width: 100%;
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-family: inherit;
+  text-align: center;
+  background: var(--color-bg-panel);
+  color: var(--color-text);
+  border: 3px solid var(--color-accent);
+  border-radius: var(--radius);
+  padding: 0.25rem 1rem;
+}
+
+/* Mapa */
+.map {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  width: 100%;
+  position: relative;
+}
+
+.starfield {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  opacity: 0.7;
+}
+
+.map-player {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  background: var(--color-bg-panel);
+  border-radius: var(--radius);
+  padding: 0.5rem 1.25rem;
+}
+
+.map-player-name {
+  font-weight: 700;
+  font-size: 1.15rem;
+}
+
+.map-crystals {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+.planet-strip {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  width: 100%;
+  padding: 0.5rem 0.25rem;
+  justify-content: flex-start;
+}
+
+@media (min-width: 900px) {
+  .planet-strip {
+    justify-content: center;
+  }
+}
+
+.planet-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 120px;
+  padding: 0.75rem;
+  background: var(--color-bg-panel);
+  border: 3px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--color-text);
+}
+
+.planet-card:hover,
+.planet-card:focus-visible {
+  border-color: var(--color-accent);
+}
+
+.planet-card.locked {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.planet-card.completed {
+  border-color: #ffd94d;
+}
+
+.planet-art {
+  width: 90px;
+  height: 90px;
+}
+
+.planet-locked {
+  filter: grayscale(0.9) brightness(0.6);
+}
+
+.planet-name {
+  font-weight: 700;
+}
+
+.planet-stars {
+  color: #ffd94d;
+  font-size: 0.95rem;
+}
+
+.map-tooltip {
+  color: #ffb04d;
+  font-weight: 600;
+  margin: 0;
+}
+
+.planet-detail {
+  background: var(--color-bg-panel);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* display:flex přebíjí atribut hidden - vrátíme mu platnost */
+.planet-detail[hidden] {
+  display: none;
+}
+
+.planet-detail h2 {
+  margin: 0;
+}
+
+.planet-subtitle {
+  margin: 0;
+}
+
+.mission-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.mission-btn {
+  width: 100%;
+  text-align: left;
+}
+
+.mission-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Mistr Jedi + konfety */
+.master-jedi {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #ffd94d;
+  text-align: center;
+  animation: master-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes master-glow {
+  0%, 100% { text-shadow: 0 0 8px rgba(255, 217, 77, 0.4); }
+  50% { text-shadow: 0 0 24px rgba(255, 217, 77, 0.9); }
+}
+
+.confetti {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -12px;
+  width: 10px;
+  height: 14px;
+  animation: confetti-fall 3.5s linear infinite;
+}
+
+@keyframes confetti-fall {
+  to { transform: translateY(105vh) rotate(720deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .master-jedi { animation: none; }
+  .confetti { display: none; }
+}

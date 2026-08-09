@@ -50,7 +50,9 @@ export function createMission(config) {
   let current = null;
 
   function spawn() {
-    current = generateForTopic(config.topic, config.seed + index * 101, currentDifficulty, index);
+    // Mixované mise (Coruscant) cyklí témata podle indexu příkladu.
+    const topic = config.topics ? config.topics[index % config.topics.length] : config.topic;
+    current = generateForTopic(topic, config.seed + index * 101, currentDifficulty, index);
     attemptsOnCurrent = 0;
     wrongOnCurrent = 0;
     hintUsedOnCurrent = false;
@@ -146,7 +148,8 @@ export function createMission(config) {
         missionId: config.id,
         planetId: config.planetId,
         crystalColor: config.crystalColor,
-        topic: config.topic,
+        topic: config.topic ?? null,
+        topics: config.topics ?? [config.topic],
         stars: mission.getStars(),
         mistakes,
         firstTryCount,

@@ -8,12 +8,12 @@
  * @param {object} options
  * @param {object} options.summary z mission.getSummary()
  * @param {object} options.granted z applyMissionResult() { starsGranted, crystalGranted, bonusGranted }
- * @param {boolean} options.hasNextMission existuje další mise?
+ * @param {string|null} [options.nextLabel] popisek hlavního tlačítka ('Další mise' / 'Další planeta: X'); null = schovat
  * @param {() => void} options.onReplay hrát znovu
- * @param {() => void} options.onNext další mise
+ * @param {() => void} options.onNext další mise nebo další planeta
  * @param {() => void} options.onMap zpět na mapu
  */
-export function createEvaluationScreen(container, { summary, granted, hasNextMission, onReplay, onNext, onMap }) {
+export function createEvaluationScreen(container, { summary, granted, nextLabel = null, onReplay, onNext, onMap }) {
   const root = document.createElement('div');
   root.className = 'evaluation';
 
@@ -23,6 +23,7 @@ export function createEvaluationScreen(container, { summary, granted, hasNextMis
   // --- Hvězdy za TENTO běh (animované postupné přičtení) ---
   const stars = document.createElement('div');
   stars.className = 'eval-stars';
+  stars.setAttribute('role', 'img');
   stars.setAttribute('aria-label', `${summary.stars} ze 3 hvězd`);
   for (let i = 1; i <= 3; i++) {
     const star = document.createElement('span');
@@ -74,11 +75,11 @@ export function createEvaluationScreen(container, { summary, granted, hasNextMis
   const actions = document.createElement('div');
   actions.className = 'eval-actions';
 
-  if (hasNextMission) {
+  if (nextLabel !== null) {
     const nextBtn = document.createElement('button');
     nextBtn.type = 'button';
     nextBtn.className = 'btn btn-primary';
-    nextBtn.textContent = 'Další mise';
+    nextBtn.textContent = nextLabel;
     nextBtn.addEventListener('click', onNext);
     actions.appendChild(nextBtn);
   }

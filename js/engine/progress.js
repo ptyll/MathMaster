@@ -33,12 +33,18 @@ export function applyMissionResult(state, summary) {
   }
 
   // Statistiky - globální i per téma (adaptivita i rodičovský přehled).
+  // Mixované mise (topics[]) přičítají podíl každému tématu.
   state.stats.totalSolved += summary.solved;
   state.stats.totalAttempts += summary.solved + summary.mistakes;
-  const topicStats = state.stats.perTopic[summary.topic];
-  if (topicStats) {
-    topicStats.solved += summary.solved;
-    topicStats.attempts += summary.solved + summary.mistakes;
+  const topics = summary.topics ?? [summary.topic];
+  const shareSolved = Math.round(summary.solved / topics.length);
+  const shareAttempts = Math.round((summary.solved + summary.mistakes) / topics.length);
+  for (const topic of topics) {
+    const topicStats = state.stats.perTopic[topic];
+    if (topicStats) {
+      topicStats.solved += shareSolved;
+      topicStats.attempts += shareAttempts;
+    }
   }
 
   return {

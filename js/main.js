@@ -11,9 +11,11 @@ import { createBrowserSaveStore } from './engine/save.js';
 import { createScreenMachine, initialScreenFor, SCREENS } from './engine/screens.js';
 import { createMission } from './engine/mission.js';
 import { applyMissionResult } from './engine/progress.js';
+import { createIntroScreen } from './ui/introScreen.js';
+import { createMapScreen } from './ui/mapScreen.js';
 import { createMissionScreen } from './ui/missionScreen.js';
 import { createEvaluationScreen } from './ui/evaluationScreen.js';
-import { getMission, getNextMission, MISSIONS } from './content/missions.js';
+import { getMission, getNextMission, isFinalMissionOfPlanet, getPlanet, PLANETS } from './content/planets.js';
 
 const store = createBrowserSaveStore();
 const state = store.load() ?? store.createNew();
@@ -27,11 +29,18 @@ const machine = createScreenMachine(initialScreenFor(state), (screen, context) =
   render(screen, context);
 });
 
-/** Seed mise: pokaždé jiná sada příkladů, ale deterministická v rámci stavu. */
+/**
+ * Seed mise: hash obsahu id (stejně dlouhá id mají jiné příklady)
+ * + variace podle odehraných pokusů a spuštění v rámci sezení.
+ */
+let missionLaunchCounter = 0;
 function missionSeed(missionId) {
-  const planet = state.planets.find((p) => p.planetId === missionId.split('-')[0]);
-  const plays = Object.keys(planet?.starsPerLevel ?? {}).length;
-  return 1000 + state.stats.totalAttempts + plays * 37;
+  let h = 1000;
+  for (const ch of missionId) {
+    h = (h * 31 + ch.codePointAt(0)) % 1000000;
+  }
+  missionLaunchCounter++;
+  return h + state.stats.totalAttempts * 37 + missionLaunchCounter * 7919;
 }
 
 function startMission(missionId) {
@@ -48,32 +57,17 @@ function render(screen, context = {}) {
   el.className = `screen screen-${screen}`;
 
   if (screen === SCREENS.INTRO) {
-    el.innerHTML = `
-      <h1>MathMaster</h1>
-      <p>Řád rytířů potřebuje tvoji pomoc. Síla plyne skrz matematiku.</p>
-      <button class="btn btn-primary" id="start-btn">Začít výcvik</button>
-    `;
-    el.querySelector('#start-btn').addEventListener('click', () => {
-      machine.go(SCREENS.MAP);
+    const screen_ = createIntroScreen(el, {
+      onStart: (name) => {
+        state.profile = { name, createdAt: new Date().toISOString() };
+        store.save(state);
+        machine.go(SCREENS.MAP);
+      },
     });
+    screenCleanup = () => screen_.destroy();
   } else if (screen === SCREENS.MAP) {
-    // Plná mapa planet je fáze 6 - zatím seznam dostupných misí.
-    const h1 = document.createElement('h1');
-    h1.textContent = 'Galaktická mapa';
-    const note = document.createElement('p');
-    note.textContent = 'Plná mapa planet dorazí ve fázi 6.';
-    el.append(h1, note);
-
-    for (const missionConfig of MISSIONS) {
-      const planet = state.planets.find((p) => p.planetId === missionConfig.planetId);
-      const stars = planet?.starsPerLevel?.[missionConfig.id] ?? 0;
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'btn btn-primary';
-      btn.textContent = `${missionConfig.title} ${'★'.repeat(stars)}`;
-      btn.addEventListener('click', () => startMission(missionConfig.id));
-      el.appendChild(btn);
-    }
+    const screen_ = createMapScreen(el, { state, onStartMission: startMission });
+    screenCleanup = () => screen_.destroy();
   } else if (screen === SCREENS.MISSION) {
     const missionConfig = getMission(context.missionId);
     const mission = createMission({ ...missionConfig, seed: missionSeed(context.missionId) });
@@ -90,12 +84,23 @@ function render(screen, context = {}) {
   } else if (screen === SCREENS.EVALUATION) {
     const { summary, granted, missionId } = context;
     const next = getNextMission(missionId);
+    const finishedPlanet = isFinalMissionOfPlanet(missionId);
+    const planetIndex = PLANETS.findIndex((p) => p.id === summary.planetId);
+    const hasNextPlanet = planetIndex >= 0 && planetIndex + 1 < PLANETS.length;
+
     const screen_ = createEvaluationScreen(el, {
       summary,
       granted,
-      hasNextMission: next !== null,
+      // Poslední mise planety -> nabídka další planety (ta se odemkla na mapě).
+      nextLabel: next !== null ? 'Další mise' : finishedPlanet && hasNextPlanet ? `Další planeta: ${getPlanet(PLANETS[planetIndex + 1].id).name}` : null,
       onReplay: () => startMission(missionId),
-      onNext: () => startMission(next.id),
+      onNext: () => {
+        if (next !== null) {
+          startMission(next.id);
+        } else {
+          machine.go(SCREENS.MAP);
+        }
+      },
       onMap: () => machine.go(SCREENS.MAP),
     });
     screenCleanup = () => screen_.destroy();

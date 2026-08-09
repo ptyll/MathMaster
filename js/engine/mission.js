@@ -13,8 +13,9 @@ import { nextDifficulty, shouldOfferHint } from '../content/adaptive.js';
 const FRACTION_KINDS = ['add', 'subtract', 'simplify', 'equivalent', 'compare', 'expand'];
 
 /**
- * Sjednocený generátor: téma + obtížnost (1-4) -> příklad.
- * equations: 1-2 jednoduché, 3-4 s násobením (mapováno na jeho 1-4).
+ * Sjednocený generátor: téma + obtížnost (1-6) -> příklad.
+ * equations: 1-2 jednoduché, 3-6 s násobením (mapováno na jeho 1-4,
+ *   tedy až po závorky a x na obou stranách).
  * fractions: druhy se cyklí podle indexu, obtížnost max 3.
  * fractionEquations: obtížnost max 3.
  */

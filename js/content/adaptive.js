@@ -5,7 +5,12 @@
  */
 
 export const MIN_DIFFICULTY = 1;
-export const MAX_DIFFICULTY = 4;
+/**
+ * Šest stupňů kvůli rovnicím: 1-2 jednoduché, 3 ax=b, 4 ax+b=c,
+ * 5 závorky, 6 x na obou stranách. Zlomky si stupnici samy zkracují
+ * na 3 (viz generateForTopic), takže je vyšší strop neovlivní.
+ */
+export const MAX_DIFFICULTY = 6;
 
 /**
  * Doporučí obtížnost dalšího příkladu.

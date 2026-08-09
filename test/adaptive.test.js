@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { nextDifficulty, shouldOfferHint } from '../js/content/adaptive.js';
+import { nextDifficulty, shouldOfferHint, MAX_DIFFICULTY } from '../js/content/adaptive.js';
 
 test('TDD-MATH-006-A: 3 správné v řadě bez nápovědy zvýší obtížnost', () => {
   const history = [
@@ -12,13 +12,15 @@ test('TDD-MATH-006-A: 3 správné v řadě bez nápovědy zvýší obtížnost',
   assert.equal(nextDifficulty(history, 2), 3);
 });
 
-test('série úspěchů nepřeleze strop obtížnosti 4', () => {
+test('série úspěchů nepřeleze strop obtížnosti', () => {
   const history = [
     { correct: true, hintUsed: false },
     { correct: true, hintUsed: false },
     { correct: true, hintUsed: false },
   ];
-  assert.equal(nextDifficulty(history, 4), 4);
+  // Strop je 6 kvůli rovnicím se závorkami a s x na obou stranách.
+  assert.equal(nextDifficulty(history, MAX_DIFFICULTY), MAX_DIFFICULTY);
+  assert.equal(nextDifficulty(history, MAX_DIFFICULTY - 1), MAX_DIFFICULTY);
 });
 
 test('úspěch s nápovědou obtížnost nezvýší', () => {

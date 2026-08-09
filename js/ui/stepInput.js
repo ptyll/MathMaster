@@ -13,6 +13,8 @@ import { createAnswerInput } from './answerInput.js';
 import { createBalanceScale } from './balanceScale.js';
 import { createNumberLine, createFractionBar } from './fractionVisuals.js';
 
+const VIZ_NOTE_PENDING = 'Váha ukazuje stav před tímhle krokem.';
+
 const OPERATIONS = [
   { kind: 'sub', label: '−', aria: 'Odečti od obou stran' },
   { kind: 'add', label: '+', aria: 'Přičti k oběma stranám' },
@@ -51,7 +53,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
   // to vedle rovnice s otazníkem mate.
   const vizNote = document.createElement('p');
   vizNote.className = 'step-viz-note';
-  vizNote.textContent = 'Váha ukazuje stav před tímhle krokem.';
+  vizNote.textContent = VIZ_NOTE_PENDING;
   vizNote.hidden = true;
 
   // --- Otázka aktuálního kroku ---
@@ -181,17 +183,22 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
       const plainSide =
         state.right.x.n === 0 ? state.right.c : state.left.x.n === 0 ? state.left.c : null;
       if (plainSide === null) {
+        // x je na obou stranách - váha ani osa to poctivě neukážou.
+        // Místo obrázku řekneme proč a co s tím, ať sloupec nezeje prázdnotou.
         vizHost.hidden = true;
-        vizNote.hidden = true;
+        vizNote.hidden = false;
+        vizNote.textContent = 'Váhu tu nenakreslíme - x je na obou stranách. Nejdřív ho dostaň jen na jednu.';
         return;
       }
       vizHost.hidden = false;
       vizNote.hidden = session.phase !== 'values';
+      vizNote.textContent = VIZ_NOTE_PENDING;
       vizHost.appendChild(createNumberLine(plainSide.n / plainSide.d));
       return;
     }
     vizHost.hidden = false;
     vizNote.hidden = session.phase !== 'values';
+    vizNote.textContent = VIZ_NOTE_PENDING;
     vizHost.appendChild(scale.element);
     const [leftText, rightText] = session.equationText.split(' = ');
     scale.show(leftText, rightText);
@@ -318,6 +325,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
     setFeedback(null);
     onFeedback({ status: 'accepted', note: null });
     selectedKind = null;
+    term = 'const';
     if (result.status === 'solved') {
       render();
       onSolved();
@@ -355,6 +363,9 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
     btn.setAttribute('aria-label', operation.aria);
     btn.addEventListener('click', () => {
       selectedKind = selectedKind === operation.kind ? null : operation.kind;
+      // Přepínač x/číslo patří k právě zvolené operaci. Bez resetu si drží
+      // stav z minulého kroku a hráči se tiše změní '+ 7' na '+ 7x'.
+      term = 'const';
       updateOperationSelection();
       renderOperationPhase();
       if (input) {

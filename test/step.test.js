@@ -499,3 +499,49 @@ test('boss: chyby v krocích stojí nejvýš jeden štít za příklad', async (
   assert.equal(b.shields, before - 1, 'čtyři chyby v krocích = jeden štít');
   assert.equal(b.hp, b.maxHp - 1, 'vyřešený příklad ubere bossovi HP i po chybách');
 });
+
+test('mise umí vygenerovat všechny tvary rovnic včetně závorek a x na obou stranách', async () => {
+  const { generateForTopic } = await import('../js/engine/mission.js');
+  const { MAX_DIFFICULTY } = await import('../js/content/adaptive.js');
+
+  const forms = new Set();
+  for (let d = 1; d <= MAX_DIFFICULTY; d++) {
+    for (let s = 1; s <= 200; s++) {
+      forms.add(generateForTopic('equations', s * 13, d, 0).form);
+    }
+  }
+  // Bez těchhle dvou se hráč nikdy nedostane k závorkám ani k přesouvání
+  // x mezi stranami - a přepínač 'Pracuju s x' by neměl k čemu sloužit.
+  assert.ok(forms.has('a(x+b)=c'), 'závorky musí jít vygenerovat');
+  assert.ok(forms.has('ax+b=cx+d'), 'x na obou stranách musí jít vygenerovat');
+});
+
+test('rovnice s x na obou stranách se dá vyřešit odečtením x-členu', () => {
+  const ex = generateLinearEquation(4242, 4);
+  assert.equal(ex.form, 'ax+b=cx+d');
+  const s = createStepSession(ex);
+  const before = s.equationState;
+  const operation = { kind: 'sub', operand: before.right.x, term: 'x' };
+
+  // Krok se potvrdí až doplněním hodnot - equationState do té doby drží
+  // poslední potvrzený stav.
+  const next = applyOperation(before, operation).next;
+  const res = s.submitOperation(operation);
+  assert.notEqual(res.status, 'invalid');
+  assert.notEqual(res.status, 'noProgress');
+  for (const slot of askedParts(before, next)) {
+    const value = partValue(next, slot);
+    s.submitValue(value.d === 1 ? { kind: 'int', value: value.n } : { kind: 'fraction', n: value.n, d: value.d });
+  }
+  assert.equal(s.equationState.right.x.n, 0, 'x zmizelo z pravé strany');
+});
+
+test('vyšší strop obtížnosti nerozbije zlomky ani rovnice se zlomky', async () => {
+  const { generateForTopic } = await import('../js/engine/mission.js');
+  for (let d = 1; d <= 6; d++) {
+    const fr = generateForTopic('fractions', 99 * d, d, 0);
+    const fe = generateForTopic('fractionEquations', 77 * d, d);
+    assert.ok(fr.difficulty <= 3, `zlomky se drží na 3, dostal ${fr.difficulty}`);
+    assert.ok(fe.difficulty <= 3, `rovnice se zlomky se drží na 3, dostal ${fe.difficulty}`);
+  }
+});

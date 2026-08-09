@@ -40,13 +40,16 @@ function panContents(panX, baseY, side) {
     g.appendChild(t);
     return g;
   }
+  const hasConstant = !!side.constantText && side.constantText !== '0';
+
   if (side.xTerm) {
-    // Miska je široká 90 - vejdou se nanejvýš dva pytlíky vedle sebe.
-    // Víc než dvě x kreslíme jako jeden pytlík s koeficientem, jinak
-    // by pytlíky přetekly přes misku až na sloup váhy.
-    const asSingleBag = side.xTerm.count > 2 || side.xTerm.label.includes('/');
+    // Miska je široká 90. Když na ní leží i kostky, zbude na pytlíky jen
+    // levá polovina - proto se víc než jedno x kreslí jako jeden pytlík
+    // s koeficientem. Jinak by pytlíky přetekly přes misku na sloup váhy.
+    const asSingleBag =
+      hasConstant || side.xTerm.count > 2 || side.xTerm.label.includes('/');
     if (asSingleBag) {
-      g.appendChild(bag(panX + 28, baseY - 34, side.xTerm.label));
+      g.appendChild(bag(panX + 4, baseY - 34, side.xTerm.label));
     } else {
       let cx = panX + 8;
       for (let i = 0; i < side.xTerm.count; i++) {
@@ -55,17 +58,25 @@ function panContents(panX, baseY, side) {
       }
     }
   }
-  if (side.constantText && side.constantText !== '0') {
+  if (hasConstant) {
     const value = parseInt(side.constantText.split('/')[0], 10);
-    const cubes = Math.min(Math.abs(value), 9); // max 9 kostek, víc se ukáže číslem
-    let cubeX = panX + 8;
-    let cubeY = baseY - 18;
+    // Vedle pytlíku je místo jen na řádek kostek; přesnou hodnotu stejně
+    // nese popisek nad miskou, kostky jsou jen názorná představa.
+    // Dvě řady jsou strop - třetí by vylezla nad rameno váhy.
+    const perRow = side.xTerm ? 3 : 4;
+    const maxCubes = side.xTerm ? 3 : 8;
+    const startX = side.xTerm ? panX + 46 : panX + 8;
+    const cubes = Math.min(Math.abs(value), maxCubes);
+    let cubeX = startX;
+    let cubeY = baseY - 15;
+    let inRow = 0;
     for (let i = 0; i < cubes; i++) {
       g.appendChild(cube(cubeX, cubeY));
-      cubeX += 18;
-      if (cubeX > panX + 80) {
-        cubeX = panX + 8;
-        cubeY -= 18;
+      cubeX += 15;
+      if (++inRow === perRow) {
+        inRow = 0;
+        cubeX = startX;
+        cubeY -= 17;
       }
     }
     const t = svgEl('text', { x: panX + 45, y: baseY - 52, 'text-anchor': 'middle', fill: '#9fd4ff', 'font-size': 14, 'font-weight': 700 });

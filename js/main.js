@@ -1,7 +1,6 @@
 /**
  * MathMaster - vstupní bod hry.
- * Spojuje save modul a stavový stroj obrazovek, renderuje placeholder
- * obrazovky (skutečný obsah přibývá v dalších fázích plánu).
+ * Spojuje save modul, stavový stroj obrazovek a jednotlivé obrazovky.
  *
  * Konvence: dynamický obsah (jméno hráče, skóre, ...) se do DOM vkládá
  * výhradně přes textContent/createElement - innerHTML jen pro statické
@@ -10,8 +9,11 @@
 
 import { createBrowserSaveStore } from './engine/save.js';
 import { createScreenMachine, initialScreenFor, SCREENS } from './engine/screens.js';
-import { createAnswerInput } from './ui/answerInput.js';
-import { generateLinearEquation } from './content/equations.js';
+import { createMission } from './engine/mission.js';
+import { applyMissionResult } from './engine/progress.js';
+import { createMissionScreen } from './ui/missionScreen.js';
+import { createEvaluationScreen } from './ui/evaluationScreen.js';
+import { getMission, getNextMission, MISSIONS } from './content/missions.js';
 
 const store = createBrowserSaveStore();
 const state = store.load() ?? store.createNew();
@@ -25,7 +27,17 @@ const machine = createScreenMachine(initialScreenFor(state), (screen, context) =
   render(screen, context);
 });
 
-/** Vykreslí placeholder dané obrazovky. */
+/** Seed mise: pokaždé jiná sada příkladů, ale deterministická v rámci stavu. */
+function missionSeed(missionId) {
+  const planet = state.planets.find((p) => p.planetId === missionId.split('-')[0]);
+  const plays = Object.keys(planet?.starsPerLevel ?? {}).length;
+  return 1000 + state.stats.totalAttempts + plays * 37;
+}
+
+function startMission(missionId) {
+  machine.go(SCREENS.MISSION, { missionId });
+}
+
 function render(screen, context = {}) {
   if (screenCleanup) {
     screenCleanup();
@@ -45,63 +57,48 @@ function render(screen, context = {}) {
       machine.go(SCREENS.MAP);
     });
   } else if (screen === SCREENS.MAP) {
-    el.innerHTML = `
-      <h1>Galaktická mapa</h1>
-      <p>Zde bude mapa planet (fáze 6).</p>
-      <button class="btn btn-primary" id="mission-btn">Zkušební mise</button>
-    `;
-    el.querySelector('#mission-btn').addEventListener('click', () => {
-      machine.go(SCREENS.MISSION, { missionId: 'test' });
-    });
-  } else if (screen === SCREENS.MISSION) {
-    // Dočasné demo vstupních komponent (fáze 3) - skutečná mise je fáze 4.
-    const exercise = generateLinearEquation(7, 2);
+    // Plná mapa planet je fáze 6 - zatím seznam dostupných misí.
     const h1 = document.createElement('h1');
-    h1.textContent = 'Zkušební mise';
-    const text = document.createElement('p');
-    text.className = 'exercise-text';
-    text.textContent = exercise.text;
-    const feedback = document.createElement('p');
-    feedback.className = 'answer-feedback';
-    feedback.setAttribute('aria-live', 'polite');
-    el.append(h1, text, feedback);
+    h1.textContent = 'Galaktická mapa';
+    const note = document.createElement('p');
+    note.textContent = 'Plná mapa planet dorazí ve fázi 6.';
+    el.append(h1, note);
 
-    const inputHost = document.createElement('div');
-    el.appendChild(inputHost);
-    const input = createAnswerInput(inputHost, {
-      expected: exercise.answer,
-      mode: 'int',
-      onSubmit: (result) => {
-        if (result.status === 'correct') {
-          feedback.textContent = 'Správně! Krystaly se blíží.';
-        } else if (result.status === 'correct-unsimplified') {
-          feedback.textContent = result.note;
-        } else if (result.status === 'invalid') {
-          feedback.textContent = result.note;
-        } else {
-          feedback.textContent = 'To není ono - zkus to znovu.';
-        }
+    for (const missionConfig of MISSIONS) {
+      const planet = state.planets.find((p) => p.planetId === missionConfig.planetId);
+      const stars = planet?.starsPerLevel?.[missionConfig.id] ?? 0;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-primary';
+      btn.textContent = `${missionConfig.title} ${'★'.repeat(stars)}`;
+      btn.addEventListener('click', () => startMission(missionConfig.id));
+      el.appendChild(btn);
+    }
+  } else if (screen === SCREENS.MISSION) {
+    const missionConfig = getMission(context.missionId);
+    const mission = createMission({ ...missionConfig, seed: missionSeed(context.missionId) });
+    const screen_ = createMissionScreen(el, {
+      mission,
+      onExit: () => machine.go(SCREENS.MAP),
+      onFinish: (summary) => {
+        const granted = applyMissionResult(state, summary);
+        store.save(state);
+        machine.go(SCREENS.EVALUATION, { summary, granted, missionId: context.missionId });
       },
     });
-    screenCleanup = () => input.destroy();
-
-    const doneBtn = document.createElement('button');
-    doneBtn.type = 'button';
-    doneBtn.className = 'btn btn-primary';
-    doneBtn.textContent = 'Dokončit misi';
-    doneBtn.addEventListener('click', () => {
-      machine.go(SCREENS.EVALUATION);
-    });
-    el.appendChild(doneBtn);
+    screenCleanup = () => screen_.destroy();
   } else if (screen === SCREENS.EVALUATION) {
-    el.innerHTML = `
-      <h1>Vyhodnocení</h1>
-      <p>Zde budou hvězdy a odměny (fáze 4).</p>
-      <button class="btn btn-primary" id="map-btn">Zpět na mapu</button>
-    `;
-    el.querySelector('#map-btn').addEventListener('click', () => {
-      machine.go(SCREENS.MAP);
+    const { summary, granted, missionId } = context;
+    const next = getNextMission(missionId);
+    const screen_ = createEvaluationScreen(el, {
+      summary,
+      granted,
+      hasNextMission: next !== null,
+      onReplay: () => startMission(missionId),
+      onNext: () => startMission(next.id),
+      onMap: () => machine.go(SCREENS.MAP),
     });
+    screenCleanup = () => screen_.destroy();
   }
 
   app.appendChild(el);

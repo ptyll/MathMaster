@@ -16,6 +16,15 @@
   box-sizing: border-box;
 }
 
+/*
+ * Prvky s display:flex/grid ignorují atribut hidden - a JS ho po celé
+ * hře používá jako hlavní způsob skrývání. Bez tohohle pravidla zůstávají
+ * skryté prvky vidět (chytila to už UX kontrola fáze 6).
+ */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -1030,4 +1039,256 @@ p {
   padding: 0.4rem 1.25rem;
   font-size: 1rem;
   min-height: 48px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Krokové zadávání řešení (UCV-STEP-001, UCV-STEP-002)                */
+/* ------------------------------------------------------------------ */
+
+.step-input {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+/* Cesta, kterou hráč ušel - ať vidí, odkud se kam dostal */
+.step-history {
+  list-style: none;
+  margin: 0;
+  padding: 0.6rem 1rem;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius);
+  max-width: 520px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.95rem;
+  color: var(--color-text-dim);
+}
+
+.step-history-op {
+  color: var(--color-accent);
+}
+
+.step-history-eq {
+  margin-left: 0.6rem;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+/* Aktuální stav rovnice - dominanta obrazovky */
+.step-equation {
+  font-size: 2.4rem;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.step-viz {
+  min-height: 140px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.step-prompt {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--color-text-dim);
+}
+
+/* Volba operace */
+.step-operations {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.btn-operation {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  font-size: 2rem;
+  font-weight: 700;
+  background: var(--color-bg-panel);
+  color: var(--color-text);
+  border: 3px solid transparent;
+  padding: 0 1rem;
+}
+
+.btn-operation:hover,
+.btn-operation:focus-visible {
+  border-color: var(--color-accent);
+}
+
+.btn-operation.is-selected {
+  background: var(--color-accent);
+  color: #05122b;
+  border-color: var(--color-accent);
+}
+
+.btn-term-toggle {
+  background: transparent;
+  color: var(--color-text-dim);
+  border: 2px solid var(--color-text-dim);
+  min-height: var(--touch-target);
+  font-size: 1rem;
+}
+
+.btn-term-toggle[aria-pressed='true'] {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.step-value-input {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.btn-step-back {
+  min-height: var(--touch-target);
+}
+
+/* Na tabletu na výšku ušetříme svislé místo */
+@media (max-width: 820px) {
+  .step-equation {
+    font-size: 2rem;
+  }
+
+  .step-viz {
+    min-height: 110px;
+  }
+
+  .step-history {
+    max-height: 5.5rem;
+    overflow-y: auto;
+  }
+}
+
+/* Zpětná vazba u místa, kde hráč klikal */
+.step-feedback {
+  margin: 0;
+  min-height: 1.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.step-feedback.is-wrong {
+  color: #ffb4a2;
+}
+
+.step-feedback.is-good {
+  color: #8ee6a0;
+}
+
+.step-history-origin .step-history-op {
+  color: var(--color-text-dim);
+}
+
+/*
+ * Krokový režim má nad vstupem navíc cestu, stav rovnice a váhu.
+ * Scénu s postavičkou proto zmenšujeme, jinak se obrazovka nevejde
+ * a hráč musí rolovat po každém kroku.
+ */
+.mission--step .mission-stage {
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.mission--step .avatar svg {
+  width: 64px;
+  height: auto;
+}
+
+.mission--step .mission-card {
+  min-width: 0;
+  gap: 0;
+}
+
+.mission--step .btn-hint,
+.mission--step .btn-step-back {
+  min-height: 48px;
+  font-size: 0.95rem;
+}
+
+.mission--step .btn-confirm {
+  font-size: 1rem;
+}
+
+.mission--step .keypad-key {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  font-size: 1.4rem;
+}
+
+/*
+ * Na širokých obrazovkách dva sloupce: vlevo kam se hráč dostal,
+ * vpravo čím pokračuje. Na jeden sloupec se to nevejde bez rolování
+ * a hráč pak nevidí zpětnou vazbu k tomu, co právě potvrdil.
+ */
+.step-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.step-col-controls {
+  width: 100%;
+  max-width: 420px;
+}
+
+@media (min-width: 900px) {
+  .step-input {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 2.5rem;
+    max-width: 1000px;
+  }
+
+  .step-col-state {
+    flex: 1 1 340px;
+    max-width: 460px;
+  }
+
+  .step-col-controls {
+    flex: 0 1 400px;
+  }
+}
+
+.mission-footer {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.step-viz-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-dim);
+  font-style: italic;
+}
+
+/* Krokový režim potřebuje výšku na rovnici a váhu - jinde ji ubíráme */
+.mission--step .step-col {
+  gap: 0.5rem;
+}
+
+.mission--step .step-viz {
+  min-height: 120px;
+}
+
+/* Zlomkové pásy v krokovém režimu pod sebou - porovnávají se velikosti */
+.step-viz--bars {
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
 }

@@ -23,6 +23,11 @@ export function expr(xN, xD, cN, cD) {
   return { x: makeFraction(xN, xD), c: makeFraction(cN, cD) };
 }
 
+/** Hluboká kopie výrazu - kroky nesou snímky stavu, ne živé odkazy. */
+export function cloneExpr(e) {
+  return { x: { ...e.x }, c: { ...e.c } };
+}
+
 /** Formátuje výraz pro zobrazení: '3x + 4', 'x', '-x', '(2/3)x - 1/2', '5'. */
 export function formatExpr(e) {
   const hasX = e.x.n !== 0;
@@ -73,6 +78,10 @@ export function solveLinearSteps(left, right) {
       leftSide: formatExpr(l),
       rightSide: formatExpr(r),
       explanation,
+      // Strojově čitelný stav po tomto kroku (UCN-STEP-001). Snímek, ne odkaz -
+      // l a r se dál přepisují. Formátované strany zůstávají pro zobrazení a váhu.
+      leftExpr: cloneExpr(l),
+      rightExpr: cloneExpr(r),
     });
   };
 
@@ -141,6 +150,8 @@ export function solveLinearSteps(left, right) {
     leftSide: 'x',
     rightSide: formatExpr(r),
     explanation: `Neznámá x = ${formatExpr(r)}. Zkoušku uděláš dosazením do původní rovnice.`,
+    leftExpr: expr(1, 1, 0, 1),
+    rightExpr: cloneExpr(r),
   });
 
   return steps;

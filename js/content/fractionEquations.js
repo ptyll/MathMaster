@@ -6,7 +6,7 @@
  */
 
 import { createPrng } from './prng.js';
-import { expr, solveLinearSteps, solvedValue, formatExpr } from './solver.js';
+import { expr, solveLinearSteps, solvedValue, formatExpr, cloneExpr } from './solver.js';
 import { makeFraction, addFractions, multiplyFractions, isWhole, formatNumber } from './fractions.js';
 
 function build({ form, left, right, text, hint, seed, difficulty }) {
@@ -20,6 +20,8 @@ function build({ form, left, right, text, hint, seed, difficulty }) {
       ? { kind: 'int', value: value.n }
       : { kind: 'fraction', n: value.n, d: value.d },
     steps: solveLinearSteps(left, right),
+    // Výchozí stav rovnice pro krokové řešení (UCN-STEP-002).
+    equation: { left: cloneExpr(left), right: cloneExpr(right) },
     hint,
     distractors: [],
     seed,

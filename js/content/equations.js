@@ -5,7 +5,7 @@
  */
 
 import { createPrng } from './prng.js';
-import { expr, formatExpr, solveLinearSteps, solvedValue } from './solver.js';
+import { expr, formatExpr, solveLinearSteps, solvedValue, cloneExpr } from './solver.js';
 import { isWhole } from './fractions.js';
 
 /**
@@ -48,6 +48,8 @@ function buildExercise({ topic, kind, form, left, right, text, hint, seed, diffi
       ? { kind: 'int', value: value.n }
       : { kind: 'fraction', n: value.n, d: value.d },
     steps,
+    // Výchozí stav rovnice pro krokové řešení (UCN-STEP-002).
+    equation: { left: cloneExpr(left), right: cloneExpr(right) },
     hint,
     distractors: isWhole(value) ? intDistractors(value.n, delta) : [],
     seed,

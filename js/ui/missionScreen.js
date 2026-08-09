@@ -7,6 +7,9 @@
 import { createAnswerInput } from './answerInput.js';
 import { createAvatar, createBossArt } from './avatar.js';
 import { createSolutionViewer } from './solutionViewer.js';
+import { createStepSession } from '../engine/stepSession.js';
+import { createStepInput } from './stepInput.js';
+import { solveLinearSteps } from '../content/solver.js';
 
 /**
  * @param {HTMLElement} container
@@ -89,7 +92,13 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
   skipBtn.className = 'btn btn-ghost';
   skipBtn.textContent = 'Přeskočit';
 
-  root.append(h1, header, stage, stepsPanel, inputHost, hintBtn, skipBtn);
+  // Nápověda a přeskočení vedle sebe - nad sebou zabírají výšku, kterou
+  // krokový režim potřebuje na rovnici a váhu.
+  const footer = document.createElement('div');
+  footer.className = 'mission-footer';
+  footer.append(hintBtn, skipBtn);
+
+  root.append(h1, header, stage, stepsPanel, inputHost, footer);
   if (isBoss) {
     // Boss: HP lišta nahoře, boss postava do stage, štíty hráče
     stage.prepend(bossArt);
@@ -105,11 +114,29 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
   let accepting = true;   // zámek vstupu během feedback pauzy (dvojklik, skip)
   let hintLevel = 0;      // 0 = žádná, 1 = návod, 2 = první krok, 3 = celé řešení
   let viewer = null;
+  let stepSession = null; // relace krokového řešení, null mimo krokový režim
+  let stepUi = null;
+
+  const stepModeEnabled = !!mission.config.stepMode;
+
+  /**
+   * Příklad pro vysvětlení. V krokovém režimu se kroky přepočítají z místa,
+   * kde hráč právě stojí - jeho cesta se od té solverovy může lišit a ukázat
+   * mu kanonické kroky původního zadání by bylo matoucí.
+   */
+  function exerciseForExplanation() {
+    const exercise = mission.currentExercise;
+    if (!stepSession || stepSession.kind !== 'equation' || stepSession.isDone) {
+      return exercise;
+    }
+    const state = stepSession.equationState;
+    return { ...exercise, steps: solveLinearSteps(state.left, state.right) };
+  }
 
   function openSolutionViewer(startStep = 0, maxSteps = null) {
     closeViewer();
     viewer = createSolutionViewer(root, {
-      exercise: mission.currentExercise,
+      exercise: exerciseForExplanation(),
       startStep,
       maxSteps,
       onClose: () => {
@@ -154,6 +181,10 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
       input.destroy();
       input = null;
     }
+    if (stepUi) {
+      stepUi.destroy();
+      stepUi = null;
+    }
   }
 
   function renderExercise() {
@@ -163,6 +194,7 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
     }
     const exercise = mission.currentExercise;
     exerciseEl.textContent = exercise.text;
+    exerciseEl.hidden = false;
     feedback.textContent = '';
     stepsPanel.hidden = true;
     stepsPanel.innerHTML = '';
@@ -172,6 +204,21 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
     closeViewer();
     destroyInput();
     inputHost.innerHTML = '';
+
+    stepSession = stepModeEnabled ? createStepSession(exercise) : null;
+    root.classList.toggle('mission--step', !!(stepSession && stepSession.isActive));
+    if (stepSession && stepSession.isActive) {
+      // Zadání ukazuje krokový vstup jako první položku cesty, karta by
+      // ho zdvojovala - a její statický text by navíc zamrzl na původní rovnici.
+      exerciseEl.hidden = true;
+      stepUi = createStepInput(inputHost, {
+        session: stepSession,
+        onFeedback: handleStepFeedback,
+        onSolved: handleStepSolved,
+      });
+      renderProgress();
+      return;
+    }
 
     if (exercise.answer.kind === 'choice') {
       // Porovnávání zlomků: dvě velká tlačítka místo klávesnice.
@@ -203,6 +250,65 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
       });
     }
     renderProgress();
+  }
+
+  /**
+   * Zpětná vazba na jednotlivý krok - příklad tím ještě nekončí.
+   * Text hlásí krokový vstup u tlačítka, kterým hráč právě klikal;
+   * karta by ho jen zdvojila na druhém konci obrazovky.
+   */
+  function handleStepFeedback(result) {
+    if (!accepting || viewer) {
+      return;
+    }
+    if (result.status === 'accepted') {
+      avatar.react('correct');
+      return;
+    }
+    if (result.status === 'reverted' || result.status === 'invalid') {
+      return;
+    }
+    avatar.react('wrong');
+    if (stepSession.shouldOfferHint) {
+      hintBtn.classList.add('attention');
+    }
+    if (stepSession.shouldShowHelp) {
+      // Jen první krok z aktuálního stavu - celé řešení by prozradilo
+      // odpověď kroku, který má hráč právě vyřešit (UCV-LEARN-001).
+      openSolutionViewer(0, 1);
+    }
+  }
+
+  /** Příklad dořešen po krocích - zápis do mise a přechod na další. */
+  function handleStepSolved() {
+    if (!accepting) {
+      return;
+    }
+    accepting = false;
+    const outcome = mission.recordStepResult(stepSession.getOutcome());
+    avatar.react('correct');
+    if (isBoss && bossArt) {
+      bossArt.classList.remove('boss-hit');
+      void bossArt.offsetWidth;
+      bossArt.classList.add('boss-hit');
+      feedback.textContent = outcome.missionDone ? 'Zásah! Boss padá!' : 'Zásah mečem! Vyřešeno!';
+    } else {
+      feedback.textContent = 'Vyřešeno krok za krokem! Krystal je blíž.';
+    }
+    renderProgress();
+    if (outcome.missionDone) {
+      timer = setTimeout(() => {
+        timer = null;
+        destroy();
+        onFinish(mission.getSummary());
+      }, 1100);
+      return;
+    }
+    timer = setTimeout(() => {
+      timer = null;
+      accepting = true;
+      renderExercise();
+    }, 1100);
   }
 
   function handleResult(result) {
@@ -280,7 +386,8 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
     mission.useHint();
     hintBtn.classList.remove('attention');
     hintLevel = Math.min(hintLevel + 1, 3);
-    const exercise = mission.currentExercise;
+    // V krokovém režimu se druhá úroveň počítá z místa, kde hráč stojí.
+    const exercise = exerciseForExplanation();
 
     if (hintLevel === 1) {
       stepsPanel.innerHTML = '';

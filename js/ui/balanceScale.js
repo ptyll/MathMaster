@@ -40,17 +40,19 @@ function panContents(panX, baseY, side) {
     g.appendChild(t);
     return g;
   }
-  let cx = panX + 8;
   if (side.xTerm) {
-    const bags = Math.min(side.xTerm.count, 4); // víc než 4 pytlíky = jeden s nápisem
-    for (let i = 0; i < bags; i++) {
-      g.appendChild(bag(cx, baseY - 34, bags === 1 ? side.xTerm.label.replace(/^\d*x$/, 'x') : 'x'));
-      cx += 40;
-    }
-    if (side.xTerm.count > 4 || side.xTerm.label.includes('/')) {
-      const t = svgEl('text', { x: panX + 45, y: baseY - 44, 'text-anchor': 'middle', fill: '#e8b98a', 'font-size': 13, 'font-weight': 700 });
-      t.textContent = side.xTerm.label;
-      g.appendChild(t);
+    // Miska je široká 90 - vejdou se nanejvýš dva pytlíky vedle sebe.
+    // Víc než dvě x kreslíme jako jeden pytlík s koeficientem, jinak
+    // by pytlíky přetekly přes misku až na sloup váhy.
+    const asSingleBag = side.xTerm.count > 2 || side.xTerm.label.includes('/');
+    if (asSingleBag) {
+      g.appendChild(bag(panX + 28, baseY - 34, side.xTerm.label));
+    } else {
+      let cx = panX + 8;
+      for (let i = 0; i < side.xTerm.count; i++) {
+        g.appendChild(bag(cx, baseY - 34, 'x'));
+        cx += 40;
+      }
     }
   }
   if (side.constantText && side.constantText !== '0') {

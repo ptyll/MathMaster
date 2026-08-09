@@ -11,13 +11,28 @@ import { createKeypad } from './keypad.js';
 /**
  * @param {HTMLElement} container
  * @param {object} options
- * @param {object} options.expected očekávaná odpověď z generátoru (kind: int|fraction)
+ * @param {object|null} options.expected očekávaná odpověď z generátoru (kind: int|fraction).
+ *   null = vstup nevyhodnocuje a jen předá zadanou hodnotu se statusem 'value';
+ *   posouzení si dělá volající (krokový režim, UCV-STEP-001).
  * @param {'int'|'fraction'} [options.mode] počáteční režim
  * @param {boolean} [options.allowModeToggle] přepínač celé číslo / zlomek
+ * @param {boolean} [options.allowSign] přepínač znaménka. U operandu kroku se
+ *   vypíná - směr už určuje zvolená operace a druhé znaménko by jen mátlo.
+ * @param {string} [options.confirmLabel] popisek potvrzovacího tlačítka
  * @param {(result: {status: string, note: string|null, value: object|null}) => void} options.onSubmit
- *   status: 'correct' | 'correct-unsimplified' | 'wrong' | 'invalid'
+ *   status: 'correct' | 'correct-unsimplified' | 'wrong' | 'invalid' | 'value'
  */
-export function createAnswerInput(container, { expected, mode = 'int', allowModeToggle = true, onSubmit }) {
+export function createAnswerInput(
+  container,
+  {
+    expected = null,
+    mode = 'int',
+    allowModeToggle = true,
+    allowSign = true,
+    confirmLabel = 'Potvrdit',
+    onSubmit,
+  }
+) {
   const model = createAnswerModel(mode);
   let submitted = false; // pojistka proti dvojitému odeslání
 
@@ -73,6 +88,9 @@ export function createAnswerInput(container, { expected, mode = 'int', allowMode
       afterInput();
     },
     onMinus: () => {
+      if (!allowSign) {
+        return; // znaménko je vypnuté, klávesa i tlačítko musí být bez efektu
+      }
       model.pressMinus();
       afterInput();
     },
@@ -85,7 +103,7 @@ export function createAnswerInput(container, { expected, mode = 'int', allowMode
   const confirmBtn = document.createElement('button');
   confirmBtn.type = 'button';
   confirmBtn.className = 'btn btn-primary btn-confirm';
-  confirmBtn.textContent = 'Potvrdit';
+  confirmBtn.textContent = confirmLabel;
   confirmBtn.disabled = true;
 
   root.append(display, errorEl, keypadHost, confirmBtn);
@@ -93,6 +111,7 @@ export function createAnswerInput(container, { expected, mode = 'int', allowMode
 
   function render() {
     const isFraction = model.mode === INPUT_MODES.FRACTION;
+    signEl.hidden = !allowSign;
     signEl.textContent = model.negative ? '−' : '+';
     signEl.classList.toggle('is-negative', model.negative);
     signEl.setAttribute('aria-pressed', String(model.negative));
@@ -159,6 +178,15 @@ export function createAnswerInput(container, { expected, mode = 'int', allowMode
     if (confirmBtn.disabled) {
       return;
     }
+    if (expected === null) {
+      // Vyhodnocení si dělá volající; zamkneme proti dvojímu odeslání
+      // a odemkne se přes unlock() nebo reset().
+      submitted = true;
+      const value = model.getValue();
+      render();
+      onSubmit({ status: 'value', note: null, value });
+      return;
+    }
     const result = model.evaluate(expected);
     if (result.status === 'correct' || result.status === 'correct-unsimplified') {
       submitted = true; // po správné odpovědi zamknout (dvojité klepnutí odešle jednou)
@@ -198,6 +226,15 @@ export function createAnswerInput(container, { expected, mode = 'int', allowMode
       }
       submitted = false;
       render();
+    },
+    /** Odemkne po odeslání, ale nechá zadanou hodnotu - hráč ji jen opraví. */
+    unlock() {
+      submitted = false;
+      render();
+    },
+    /** Vrátí fokus na potvrzení - po chybě ať hráč nehledá, kde pokračovat. */
+    focus() {
+      numBtn.focus();
     },
     /** Uvolní posluchače klávesnice. */
     destroy() {

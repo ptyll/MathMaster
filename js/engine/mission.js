@@ -118,6 +118,26 @@ export function createMission(config) {
       return mission._advance({ outcome: 'correct', firstTry, showSteps: false });
     },
 
+    /**
+     * Zápis příkladu vyřešeného po krocích (UCN-STEP-002).
+     * Chyby z jednotlivých kroků se agregují na JEDEN výsledek za příklad:
+     * do hvězd se počítá nejvýš jedna chyba a adaptivita dostane jeden
+     * záznam. Bez toho by krokový režim rozbil obojí.
+     * @param {{mistakes: number}} outcome souhrn z relace
+     */
+    recordStepResult({ mistakes: stepMistakes }) {
+      attemptsOnCurrent++;
+      const firstTry = stepMistakes === 0;
+      if (firstTry) {
+        firstTryCount++;
+      } else {
+        mistakes++;
+      }
+      solvedCount++;
+      history.push({ correct: firstTry, hintUsed: hintUsedOnCurrent });
+      return mission._advance({ outcome: 'correct', firstTry, showSteps: false });
+    },
+
     /** Přeskočení příkladu - počítá se jako nezodpovězený (chyba pro hvězdy). */
     skip() {
       mistakes++;
@@ -135,12 +155,17 @@ export function createMission(config) {
       return { ...result, missionDone };
     },
 
-    /** Hvězdy: 3 = vše napoprvé bez nápověd, 2 = max 2 chyby, 1 = dokončeno. */
+    /**
+     * Hvězdy: 3 = vše napoprvé bez nápověd, 2 = málo chyb, 1 = dokončeno.
+     * Práh pro 2 hvězdy roste s délkou mise - mise mají 4 až 9 příkladů
+     * a pevná dvojka by delší mise trestala nesrovnatelně přísněji.
+     */
     getStars() {
       if (mistakes === 0 && firstTryCount === config.exerciseCount && hintsUsed === 0) {
         return 3;
       }
-      return mistakes <= 2 ? 2 : 1;
+      const allowed = Math.max(2, Math.round(config.exerciseCount / 3));
+      return mistakes <= allowed ? 2 : 1;
     },
 
     getSummary() {
@@ -232,6 +257,38 @@ export function createBossMission(config) {
         hintUsedOnCurrent = true;
         hintsUsed++;
       }
+    },
+
+    /**
+     * Zápis příkladu vyřešeného po krocích (UCN-STEP-002).
+     * Chyby v krocích se agregují: hráč přijde nejvýš o jeden štít za
+     * příklad, jinak by ho krokový souboj sundal během jediné rovnice.
+     */
+    recordStepResult({ mistakes: stepMistakes }) {
+      attemptsOnCurrent++;
+      let healed = false;
+      if (stepMistakes > 0) {
+        mistakes++;
+        shields--;
+        if (shields <= 0) {
+          hp = Math.max(hp, Math.ceil(maxHp / 2));
+          shields = 3;
+          healedCount++;
+          healed = true;
+        }
+      } else {
+        firstTryCount++;
+      }
+      solvedCount++;
+      history.push({ correct: stepMistakes === 0, hintUsed: hintUsedOnCurrent });
+      hp--;
+      index++;
+      done = hp <= 0;
+      if (!done) {
+        currentDifficulty = nextDifficulty(history, currentDifficulty);
+        spawn();
+      }
+      return { outcome: 'correct', missionDone: done, healed, hp, shields };
     },
 
     recordAnswer(status) {

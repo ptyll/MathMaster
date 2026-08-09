@@ -67,7 +67,7 @@ function addSubSteps(a, b, operation) {
   if (simplified.n !== resultN || simplified.d !== common) {
     const divisor = gcd(resultN, common);
     steps.push({
-      operation: `Zrať číslem ${divisor}`,
+      operation: `Zkrať číslem ${divisor}`,
       leftSide: `${resultN}/${common}`,
       rightSide: formatNumber(simplified),
       explanation: 'Výsledek vždy uvádíme v základním tvaru - čitatele i jmenovatele dělíme jejich největším společným dělitelem.',
@@ -156,6 +156,8 @@ export function generateFractionExercise(seed, kind, difficulty = 1) {
       text: `Vypočítej: ${formatNumber(a)} ${operation} ${formatNumber(b)}`,
       answer: { kind: 'fraction', n: result.n, d: result.d },
       steps: addSubSteps(a, b, operation),
+      // Operandy pro krokové řešení (UCV-STEP-002) - UI je nesmí tahat z textu.
+      operands: [{ ...a }, { ...b }],
       hint:
         a.d === b.d
           ? 'Jmenovatele jsou stejné - stačí pracovat s čitateli.'
@@ -169,7 +171,7 @@ export function generateFractionExercise(seed, kind, difficulty = 1) {
     const given = { n: f.n * k, d: f.d * k };
     return {
       ...base,
-      text: `Zrať do základního tvaru: ${given.n}/${given.d}`,
+      text: `Zkrať do základního tvaru: ${given.n}/${given.d}`,
       answer: { kind: 'fraction', n: f.n, d: f.d },
       steps: [
         {

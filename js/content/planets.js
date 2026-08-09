@@ -4,6 +4,11 @@
  * -> Dagobah (zlomky) -> Death Star (rovnice se zlomky) -> Coruscant (mix).
  * Poslední mise planety je vždy boss (mechanika bosse = fáze 7).
  * Grafika i názvy jsou vlastní (DEC-006) - žádné chráněné assety.
+ *
+ * stepMode (UCN-STEP-002): hráč zadává každou úpravu rovnice místo výsledku.
+ * Zapíná se až po zvládnutí tématu odpovědí, ne hned - první mise planety
+ * téma zavádí, teprve další ho nutí rozepsat. Krokový příklad trvá zhruba
+ * trojnásobek času, proto mají tyhle mise míň příkladů.
  */
 
 export const PLANETS = [
@@ -28,9 +33,9 @@ export const PLANETS = [
     art: 'ice',
     missions: [
       { id: 'hoth-1', title: 'Ledový start', topic: 'equations', startDifficulty: 3, exerciseCount: 5 },
-      { id: 'hoth-2', title: 'Zamrzlé závorky', topic: 'equations', startDifficulty: 3, exerciseCount: 6 },
-      { id: 'hoth-3', title: 'Sněhová vánice', topic: 'equations', startDifficulty: 4, exerciseCount: 7 },
-      { id: 'hoth-boss', title: 'Inkvizitor z ledu', topic: 'equations', startDifficulty: 4, boss: true },
+      { id: 'hoth-2', title: 'Zamrzlé závorky', topic: 'equations', startDifficulty: 3, exerciseCount: 4, stepMode: true },
+      { id: 'hoth-3', title: 'Sněhová vánice', topic: 'equations', startDifficulty: 4, exerciseCount: 4, stepMode: true },
+      { id: 'hoth-boss', title: 'Inkvizitor z ledu', topic: 'equations', startDifficulty: 4, boss: true, stepMode: true },
     ],
   },
   {
@@ -42,7 +47,7 @@ export const PLANETS = [
     missions: [
       { id: 'dagobah-1', title: 'Zlomková bažina', topic: 'fractions', startDifficulty: 1, exerciseCount: 5 },
       { id: 'dagobah-2', title: 'Mistrovství krácení', topic: 'fractions', startDifficulty: 2, exerciseCount: 6 },
-      { id: 'dagobah-3', title: 'Síla společného jmenovatele', topic: 'fractions', startDifficulty: 3, exerciseCount: 7 },
+      { id: 'dagobah-3', title: 'Síla společného jmenovatele', topic: 'fractions', startDifficulty: 3, exerciseCount: 5, stepMode: true },
       { id: 'dagobah-boss', title: 'Inkvizitor z bažiny', topic: 'fractions', startDifficulty: 3, boss: true },
     ],
   },
@@ -54,8 +59,8 @@ export const PLANETS = [
     art: 'station',
     missions: [
       { id: 'deathstar-1', title: 'Nástup na stanici', topic: 'fractionEquations', startDifficulty: 1, exerciseCount: 5 },
-      { id: 'deathstar-2', title: 'Reaktorové chodby', topic: 'fractionEquations', startDifficulty: 2, exerciseCount: 6 },
-      { id: 'deathstar-boss', title: 'Temný lord', topic: 'fractionEquations', startDifficulty: 3, boss: true },
+      { id: 'deathstar-2', title: 'Reaktorové chodby', topic: 'fractionEquations', startDifficulty: 2, exerciseCount: 4, stepMode: true },
+      { id: 'deathstar-boss', title: 'Temný lord', topic: 'fractionEquations', startDifficulty: 3, boss: true, stepMode: true },
     ],
   },
   {
@@ -66,8 +71,8 @@ export const PLANETS = [
     art: 'city',
     missions: [
       { id: 'coruscant-1', title: 'Městká džungle', topics: ['equations', 'fractions'], startDifficulty: 2, exerciseCount: 6 },
-      { id: 'coruscant-2', title: 'Výškové výzvy', topics: ['equations', 'fractions', 'fractionEquations'], startDifficulty: 3, exerciseCount: 7 },
-      { id: 'coruscant-boss', title: 'Velký mistr', topics: ['equations', 'fractions', 'fractionEquations'], startDifficulty: 4, boss: true },
+      { id: 'coruscant-2', title: 'Výškové výzvy', topics: ['equations', 'fractions', 'fractionEquations'], startDifficulty: 3, exerciseCount: 5, stepMode: true },
+      { id: 'coruscant-boss', title: 'Velký mistr', topics: ['equations', 'fractions', 'fractionEquations'], startDifficulty: 4, boss: true, stepMode: true },
     ],
   },
 ];

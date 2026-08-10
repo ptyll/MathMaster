@@ -726,3 +726,74 @@ test('zadání příkladu a stav v krokovém režimu jsou stejný zápis', () =>
 function formatExprOf(xn, cn) {
   return formatExprRef(expr(xn, 1, cn, 1));
 }
+
+/* --- záporný koeficient: -3x = 21 --- */
+
+test('vydělení kladným číslem je pokrok i když zůstane záporné x', () => {
+  // -3x = 21  ->  -x = 7. Zbývá otočit znaménko, takže to POKROK je;
+  // dřív mělo -3x stejné skóre jako -x a hra tenhle krok odmítala.
+  const start = { left: expr(-3, 1, 0, 1), right: expr(0, 1, 21, 1) };
+  const applied = applyOperation(start, { kind: 'div', operand: f(3) });
+  assert.equal(applied.status, 'ok');
+  assert.equal(checkStep(start, applied.next).status, 'ok');
+  assert.ok(progressScore(applied.next) < progressScore(start));
+  assert.deepEqual(applied.next.left.x, { n: -1, d: 1 });
+  assert.deepEqual(applied.next.right.c, { n: 7, d: 1 });
+});
+
+test('-3x = 21 jde dořešit obojí cestou i přes otočení znaménka první', () => {
+  const start = { left: expr(-3, 1, 0, 1), right: expr(0, 1, 21, 1) };
+
+  // a) vyděl 3, pak vynásob -1
+  const a1 = applyOperation(start, { kind: 'div', operand: f(3) }).next;
+  const a2 = applyOperation(a1, { kind: 'mul', operand: makeFraction(-1) }).next;
+  assert.equal(isSolved(a2), true);
+  assert.deepEqual(a2.right.c, { n: -7, d: 1 });
+
+  // b) vynásob -1, pak vyděl 3
+  const b1 = applyOperation(start, { kind: 'mul', operand: makeFraction(-1) }).next;
+  assert.equal(checkStep(start, b1).status, 'ok');
+  const b2 = applyOperation(b1, { kind: 'div', operand: f(3) }).next;
+  assert.equal(isSolved(b2), true);
+  assert.deepEqual(b2.right.c, { n: -7, d: 1 });
+
+  // c) rovnou vyděl -3
+  const c1 = applyOperation(start, { kind: 'div', operand: makeFraction(-3) }).next;
+  assert.equal(isSolved(c1), true);
+});
+
+test('celá relace 5x + 8 = 8x + 29 přes dělení 3 a otočení znaménka', () => {
+  const s = createStepSession({ equation: { left: expr(5, 1, 8, 1), right: expr(8, 1, 29, 1) } });
+
+  s.submitOperation({ kind: 'sub', operand: f(8) });
+  s.submitValue({ kind: 'int', value: 21 });
+  assert.equal(s.equationText, '5x = 8x + 21');
+
+  s.submitOperation({ kind: 'sub', operand: f(8), term: 'x' });
+  s.submitValue({ kind: 'int', value: -3 });
+  assert.equal(s.equationText, '-3x = 21');
+
+  const res = s.submitOperation({ kind: 'div', operand: f(3) });
+  assert.notEqual(res.status, 'noProgress', 'dělení třemi musí projít');
+  s.submitValue({ kind: 'int', value: -1 });
+  s.submitValue({ kind: 'int', value: 7 });
+  assert.equal(s.equationText, '-x = 7');
+
+  s.submitOperation({ kind: 'mul', operand: makeFraction(-1) });
+  while (s.phase === 'values') {
+    s.submitValue({ kind: 'int', value: -7 });
+  }
+  assert.equal(s.isDone, true);
+  assert.equal(s.getOutcome().mistakes, 0, 'žádný z kroků není chyba');
+});
+
+test('kroky, které od cíle vzdalují, zůstávají odmítnuté', () => {
+  // pojistka, že rozvolněné skóre nepustí i nesmysly
+  const solved = { left: expr(1, 1, 0, 1), right: expr(0, 1, 5, 1) };
+  const worse = applyOperation(solved, { kind: 'mul', operand: f(3) }).next;
+  assert.equal(checkStep(solved, worse).status, 'noProgress');
+
+  const start = { left: expr(3, 1, 0, 1), right: expr(0, 1, 15, 1) };
+  const added = applyOperation(start, { kind: 'add', operand: f(5) }).next;
+  assert.equal(checkStep(start, added).status, 'noProgress');
+});

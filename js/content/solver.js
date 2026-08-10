@@ -75,23 +75,37 @@ export function formatExpr(e) {
 function formatPlain(e) {
   const hasX = e.x.n !== 0;
   const hasC = e.c.n !== 0;
-  const xTerm = !hasX
-    ? ''
-    : e.x.n === 1 && e.x.d === 1
-      ? 'x'
-      : e.x.n === -1 && e.x.d === 1
-        ? '-x'
-        : isWhole(e.x)
-          ? `${e.x.n}x`
-          : `(${formatNumber(e.x)})x`;
-  if (!hasC) {
-    return hasX ? xTerm : '0';
-  }
-  const cText = formatNumber({ n: Math.abs(e.c.n), d: e.c.d });
   if (!hasX) {
-    return formatNumber(e.c);
+    return hasC ? formatNumber(e.c) : '0';
   }
-  return e.c.n > 0 ? `${xTerm} + ${cText}` : `${xTerm} - ${cText}`;
+
+  const magnitude = { n: Math.abs(e.x.n), d: e.x.d };
+  const xBody =
+    magnitude.n === 1 && magnitude.d === 1
+      ? 'x'
+      : // Koeficient 1/d píšeme jako 'x/9', ne '(1/9)x' - tak zní i zadání
+        // a pro dítě je to čitelnější zápis dělení.
+        magnitude.n === 1
+        ? `x/${magnitude.d}`
+        : isWhole(magnitude)
+          ? `${magnitude.n}x`
+          : `(${formatNumber(magnitude)})x`;
+  const xNegative = e.x.n < 0;
+  const signedX = xNegative ? `-${xBody}` : xBody;
+
+  if (!hasC) {
+    return signedX;
+  }
+
+  // Záporný x-člen s kladnou konstantou píšeme jako '12 - x', ne '-x + 12'.
+  // Přesně tak zní i zadání příkladu - dítě jinak vidí dva zápisy téhož
+  // a musí si domýšlet, že jde o tutéž rovnici.
+  if (xNegative && e.c.n > 0) {
+    return `${formatNumber(e.c)} - ${xBody}`;
+  }
+
+  const cText = formatNumber({ n: Math.abs(e.c.n), d: e.c.d });
+  return e.c.n > 0 ? `${signedX} + ${cText}` : `${signedX} - ${cText}`;
 }
 
 /** Dosadí hodnotu za x a vrátí hodnotu výrazu jako zlomek. */

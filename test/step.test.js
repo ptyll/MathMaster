@@ -1,7 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { expr, factoredExpr, solveLinearSteps, isFactored, factorOf } from '../js/content/solver.js';
+import {
+  expr,
+  factoredExpr,
+  solveLinearSteps,
+  isFactored,
+  factorOf,
+  formatExpr as formatExprRef,
+} from '../js/content/solver.js';
 import {
   applyOperation,
   checkStep,
@@ -679,3 +686,43 @@ test('dělení -1 je rovnocenná cesta k témuž', () => {
   }
   assert.equal(s.isDone, true);
 });
+
+/* --- zápis rovnice: zadání a krokový režim se musí shodovat --- */
+
+test('záporný x-člen s kladnou konstantou se píše jako 12 - x', () => {
+  assert.equal(formatExprOf(-1, 12), '12 - x');
+  assert.equal(formatExprOf(-3, 10), '10 - 3x');
+  // obojí záporné: vedení konstantou by dalo '-5 - x', necháváme x vpředu
+  assert.equal(formatExprOf(-1, -5), '-x - 5');
+  // kladné x zůstává beze změny
+  assert.equal(formatExprOf(1, 7), 'x + 7');
+  assert.equal(formatExprOf(3, -4), '3x - 4');
+  assert.equal(formatExprOf(-1, 0), '-x');
+});
+
+test('zadání příkladu a stav v krokovém režimu jsou stejný zápis', () => {
+  // Platí pro všechny generátory rovnic. Dvojí zápis téže rovnice je
+  // pro dítě zbytečná zátěž - zadání i krokový stav se skládají ze
+  // stejné struktury, takže se nemůžou rozejít.
+  const forms = new Set();
+  for (let seed = 1; seed <= 120; seed++) {
+    const cases = [
+      generateSimpleEquation(seed * 7, (seed % 2) + 1),
+      generateLinearEquation(seed * 11, (seed % 4) + 1),
+      generateFractionEquation(seed * 13, (seed % 3) + 1),
+    ];
+    for (const ex of cases) {
+      const shown = `${formatExprRef(ex.equation.left)} = ${formatExprRef(ex.equation.right)}`;
+      assert.equal(shown, ex.text, `${ex.form}: zadání a krokový zápis se liší`);
+      forms.add(ex.form);
+    }
+  }
+  // Pojistka, že test pokryl i tvary, kde zápis nebyl samozřejmý.
+  for (const form of ['a-x=b', 'a(x+b)=c', 'x/a=b']) {
+    assert.ok(forms.has(form), `test musí zahrnout tvar ${form}`);
+  }
+});
+
+function formatExprOf(xn, cn) {
+  return formatExprRef(expr(xn, 1, cn, 1));
+}

@@ -30,6 +30,26 @@ export function parseSide(text) {
     return result;
   }
 
+  // 'x/9' případně '-x/9 + 4': koeficient 1/d se píše jako dělení.
+  m = trimmed.match(/^(-?)x\/(\d+)(?:\s*([+-])\s*(.+))?$/);
+  if (m) {
+    result.xTerm = { count: 1, label: `${m[1]}x/${m[2]}` };
+    result.negative = m[1] === '-';
+    result.constantText = m[4] ? (m[3] === '-' ? `-${m[4]}` : m[4]) : null;
+    return result;
+  }
+
+  // 'c - ax': záporný x-člen se píše až za konstantu (12 - x, 10 - 3x),
+  // stejně jako v zadání příkladu.
+  m = trimmed.match(/^(-?\d+(?:\/\d+)?)\s*-\s*(\d*)x$/);
+  if (m) {
+    const count = m[2] === '' ? 1 : parseInt(m[2], 10);
+    result.xTerm = { count: Math.max(1, count), label: count === 1 ? '-x' : `-${count}x` };
+    result.constantText = m[1];
+    result.negative = true;
+    return result;
+  }
+
   // x-člen: 'x', '-x', '3x', '(2/3)x' + volitelná konstanta
   m = trimmed.match(/^(-?)(\d*)x(?:\s*([+-])\s*(.+))?$/) ?? trimmed.match(/^(\(\d+\/\d+\))x(?:\s*([+-])\s*(.+))?$/);
   if (!m) {

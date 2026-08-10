@@ -70,7 +70,6 @@ export function generateSimpleEquation(seed, difficulty = 1) {
 
   let left;
   let right;
-  let text;
   let x;
 
   if (form === 'x+a=b' || form === 'a+x=b') {
@@ -79,14 +78,12 @@ export function generateSimpleEquation(seed, difficulty = 1) {
     const b = x + a;
     left = expr(1, 1, a, 1);
     right = expr(0, 1, b, 1);
-    text = form === 'x+a=b' ? `x + ${a} = ${b}` : `${a} + x = ${b}`;
   } else if (form === 'x-a=b') {
     x = prng.int(2, max);
     const a = prng.int(1, x - 1);
     const b = x - a;
     left = expr(1, 1, -a, 1);
     right = expr(0, 1, b, 1);
-    text = `x - ${a} = ${b}`;
   } else {
     // a - x = b  (x = a - b)
     const a = prng.int(2, max);
@@ -94,7 +91,6 @@ export function generateSimpleEquation(seed, difficulty = 1) {
     const b = a - x;
     left = expr(-1, 1, a, 1);
     right = expr(0, 1, b, 1);
-    text = `${a} - x = ${b}`;
   }
 
   return buildExercise({
@@ -103,7 +99,9 @@ export function generateSimpleEquation(seed, difficulty = 1) {
     form,
     left,
     right,
-    text,
+    // Zadání se skládá ze stejné struktury, kterou pak ukazuje krokový
+    // režim - jinak dítě vidí dva různé zápisy téže rovnice.
+    text: `${formatExpr(left)} = ${formatExpr(right)}`,
     hint: 'Co musíš udělat, aby x zůstalo na jedné straně samo? Udělej to na OBOU stranách rovnice.',
     seed,
     difficulty,

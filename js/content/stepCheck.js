@@ -158,17 +158,20 @@ export function progressScore(state) {
   // činitelem ani roznásobení nevyšlo jako pokrok a hra by se zasekla.
   const brackets = (isFactored(state.left) ? 1 : 0) + (isFactored(state.right) ? 1 : 0);
 
-  // Velikost koeficientu a jeho znaménko se počítají zvlášť. Kdyby se
-  // hodnotilo jen 'je koeficient přesně 1?', mělo by -3x stejné skóre
-  // jako -x a vydělení třemi by vyšlo jako krok bez pokroku - přitom
-  // pak stačí otočit znaménko a je hotovo.
+  // Koeficient u x se rozpadá na tři nezávislé překážky: zlomkovost,
+  // velikost a znaménko. Kdyby se hodnotilo jen 'je koeficient přesně 1?',
+  // splynulo by (2/9)x s 2x i -3x s -x - a hra by odmítala vynásobení
+  // jmenovatelem nebo vydělení kladným číslem, přestože jsou to zjevné
+  // kroky k cíli.
   const sideScore = (withX, other) => {
     const coef = effectiveX(withX);
+    const fractionOff = coef.d !== 1 ? 1 : 0;
     const magnitudeOff = Math.abs(coef.n) === coef.d ? 0 : 1;
     const signOff = coef.n < 0 ? 1 : 0;
     return (
       2 * (effectiveX(other).n !== 0 ? 1 : 0) +
       (effectiveC(withX).n !== 0 ? 1 : 0) +
+      fractionOff +
       magnitudeOff +
       signOff
     );

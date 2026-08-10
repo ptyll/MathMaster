@@ -41,10 +41,23 @@ test('řešení a - x = b jde přes "přičti x k oběma stranám" (bez záporn�
   assert.ok(!steps.some((s) => /(^|\s)-\d/.test(s.leftSide) || /(^|\s)-\d/.test(s.rightSide)));
 });
 
-test('zlomkový koeficient (2/3)x = 4 navrhne převrácenou hodnotu', () => {
+test('zlomkový koeficient (2/3)x = 4 se řeší násobením jmenovatelem, ne dělením zlomkem', () => {
+  // Dvě elementární operace ('× 3' a '÷ 2') jsou pro dítě schůdnější
+  // než jediné dělení zlomkem 2/3, i když je jich o jednu víc.
   const steps = solveLinearSteps(expr(2, 3, 0, 1), expr(0, 1, 4, 1));
-  assert.ok(steps.some((s) => s.operation.includes('3/2')));
+  assert.match(steps[0].operation, /Vynásob obě strany 3/);
+  assert.equal(steps[0].leftSide, '2x');
+  assert.match(steps[1].operation, /Vyděl obě strany 2/);
+  assert.equal(steps[1].rightSide, '6');
+  assert.ok(!steps.some((s) => s.operation.includes('převrácen')), 'převrácená hodnota se dítěti nenabízí');
   assert.deepEqual(solvedValue(expr(2, 3, 0, 1), expr(0, 1, 4, 1)), { n: 6, d: 1 });
+});
+
+test('koeficient 1/d zůstává na jednom kroku', () => {
+  const steps = solveLinearSteps(expr(1, 9, 0, 1), expr(0, 1, 11, 1));
+  assert.match(steps[0].operation, /Vynásob obě strany 9/);
+  assert.equal(steps[0].leftSide, 'x');
+  assert.equal(steps[0].rightSide, '99');
 });
 
 test('solvedValue ověřeno dosazením (zkouška)', () => {

@@ -200,30 +200,36 @@ export function solveLinearSteps(left, right) {
     push(operation, explanation);
   }
 
-  // 3. Zbavit se koeficientu u x.
-  if (!(l.x.n === 1 && l.x.d === 1)) {
-    let operation;
-    let explanation;
-    if (l.x.n === -1 && l.x.d === 1) {
-      operation = 'Vyměň znaménka na obou stranách (vynásob -1)';
-      explanation = 'Když obě strany vynásobíme -1, rovnice platí dál.';
-      r.c = multiplyFractions(r.c, makeFraction(-1));
-    } else if (l.x.n === 1 && l.x.d > 1) {
-      operation = `Vynásob obě strany ${l.x.d}`;
-      explanation = 'Násobení obou stran stejným číslem rovnost nenaruší.';
-      r.c = multiplyFractions(r.c, makeFraction(l.x.d));
-    } else if (isWhole(l.x)) {
-      operation = `Vyděl obě strany ${formatNumber(l.x)}`;
-      explanation = 'Obě strany rozdělíme na stejný počet stejných dílů.';
-      r.c = divideFractions(r.c, l.x);
-    } else {
-      const reciprocal = makeFraction(l.x.d, l.x.n);
-      operation = `Vyděl obě strany ${formatNumber(l.x)} (to je stejné jako vynásobit ${formatNumber(reciprocal)})`;
-      explanation = 'Dělení zlomkem je násobení jeho převrácenou hodnotou.';
-      r.c = divideFractions(r.c, l.x);
-    }
+  // 3a. Zlomkový koeficient nejdřív vyčistíme vynásobením jmenovatelem.
+  //     '(2/9)x = 4/9' tak vede na '× 9' a pak '÷ 2' místo jediného
+  //     dělení zlomkem 2/9 - dvě elementární operace jsou pro dítě
+  //     schůdnější než dělení zlomkem, i když je jich o jednu víc.
+  if (l.x.d > 1) {
+    const denominator = makeFraction(l.x.d);
+    l = expr(multiplyFractions(l.x, denominator).n, 1, 0, 1);
+    r.c = multiplyFractions(r.c, denominator);
+    push(
+      `Vynásob obě strany ${formatNumber(denominator)}`,
+      'Násobením jmenovatelem se u x zbavíme zlomku.'
+    );
+  }
+
+  // 3b. Zbavit se celočíselného koeficientu u x.
+  if (l.x.n === -1) {
+    r.c = multiplyFractions(r.c, makeFraction(-1));
     l = expr(1, 1, 0, 1);
-    push(operation, explanation);
+    push(
+      'Vyměň znaménka na obou stranách (vynásob -1)',
+      'Když obě strany vynásobíme -1, rovnice platí dál.'
+    );
+  } else if (l.x.n !== 1) {
+    const divisor = { ...l.x };
+    r.c = divideFractions(r.c, divisor);
+    l = expr(1, 1, 0, 1);
+    push(
+      `Vyděl obě strany ${formatNumber(divisor)}`,
+      'Obě strany rozdělíme na stejný počet stejných dílů.'
+    );
   }
 
   // 4. Výsledek.

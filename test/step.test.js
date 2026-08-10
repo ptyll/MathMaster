@@ -849,3 +849,62 @@ test('větší společný jmenovatel než nejmenší pásy nerozbije', () => {
   assert.deepEqual(s.bars.map((x) => x.label), ['?/12', '2/3']);
   assert.equal(s.bars[0].n, 6);
 });
+
+/* --- zlomkový koeficient: (2/9)x = 4/9 --- */
+
+test('vynásobení jmenovatelem je pokrok u zlomkového koeficientu', () => {
+  // Dřív mělo (2/9)x stejné skóre jako 2x, takže hra '× 9' odmítala,
+  // přestože zlomek u x je zjevná překážka navíc.
+  const start = { left: expr(2, 9, 0, 1), right: expr(0, 1, 4, 9) };
+  const applied = applyOperation(start, { kind: 'mul', operand: f(9) });
+  assert.equal(applied.status, 'ok');
+  assert.equal(checkStep(start, applied.next).status, 'ok');
+  assert.ok(progressScore(applied.next) < progressScore(start));
+  assert.deepEqual(applied.next.left.x, { n: 2, d: 1 });
+  assert.deepEqual(applied.next.right.c, { n: 4, d: 1 });
+});
+
+test('(2/9)x = 4/9 jde dořešit oběma cestami', () => {
+  const start = { left: expr(2, 9, 0, 1), right: expr(0, 1, 4, 9) };
+
+  // a) vynásob 9, pak vyděl 2
+  const a1 = applyOperation(start, { kind: 'mul', operand: f(9) }).next;
+  const a2 = applyOperation(a1, { kind: 'div', operand: f(2) }).next;
+  assert.equal(isSolved(a2), true);
+  assert.deepEqual(a2.right.c, { n: 2, d: 1 });
+
+  // b) rovnou vyděl zlomkem 2/9
+  const b1 = applyOperation(start, { kind: 'div', operand: makeFraction(2, 9) }).next;
+  assert.equal(isSolved(b1), true);
+  assert.deepEqual(b1.right.c, { n: 2, d: 1 });
+});
+
+test('násobení, které zlomek u x neodstraní, zůstává bez pokroku', () => {
+  // '× 2' udělá z (2/9)x jen (4/9)x - pořád zlomek, pořád ne 1
+  const start = { left: expr(2, 9, 0, 1), right: expr(0, 1, 4, 9) };
+  const applied = applyOperation(start, { kind: 'mul', operand: f(2) });
+  assert.equal(checkStep(start, applied.next).status, 'noProgress');
+});
+
+test('celá relace (2/9)x + 3/4 = 43/36 přes vynásobení devíti', () => {
+  const s = createStepSession({ equation: { left: expr(2, 9, 3, 4), right: expr(0, 1, 43, 36) } });
+
+  s.submitOperation({ kind: 'sub', operand: makeFraction(3, 4) });
+  s.submitValue({ kind: 'fraction', n: 4, d: 9 });
+  assert.equal(s.equationText, '(2/9)x = 4/9');
+
+  const res = s.submitOperation({ kind: 'mul', operand: f(9) });
+  assert.notEqual(res.status, 'noProgress', 'vynásobení jmenovatelem musí projít');
+  while (s.phase === 'values') {
+    const prompt = s.question.prompt;
+    s.submitValue({ kind: 'int', value: prompt.includes('levé') ? 2 : 4 });
+  }
+  assert.equal(s.equationText, '2x = 4');
+
+  s.submitOperation({ kind: 'div', operand: f(2) });
+  while (s.phase === 'values') {
+    s.submitValue({ kind: 'int', value: 2 });
+  }
+  assert.equal(s.isDone, true);
+  assert.equal(s.getOutcome().mistakes, 0);
+});

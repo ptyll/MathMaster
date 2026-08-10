@@ -626,3 +626,56 @@ test('vyšší strop obtížnosti nerozbije zlomky ani rovnice se zlomky', async
     assert.ok(fe.difficulty <= 3, `rovnice se zlomky se drží na 3, dostal ${fe.difficulty}`);
   }
 });
+
+/* --- záporné x: -x = -11 --- */
+
+test('samotné -x se řeší vynásobením -1, ne oklikou přes přehození stran', () => {
+  const steps = solveLinearSteps(expr(-1, 1, 0, 1), expr(0, 1, -11, 1));
+  assert.match(steps[0].operation, /vynásob -1/i);
+  assert.equal(steps[0].leftSide, 'x');
+  assert.equal(steps[0].rightSide, '11');
+});
+
+test('a - x = b se dál řeší přehozením stran, tam je to kratší', () => {
+  const steps = solveLinearSteps(expr(-1, 1, 49, 1), expr(0, 1, 38, 1));
+  assert.match(steps[0].operation, /Přičti x/);
+});
+
+test('vynásobení -1 vyřeší -x = -11 jedním krokem', () => {
+  const start = { left: expr(-1, 1, 0, 1), right: expr(0, 1, -11, 1) };
+  const applied = applyOperation(start, { kind: 'mul', operand: makeFraction(-1) });
+  assert.equal(applied.status, 'ok');
+  const verdict = checkStep(start, applied.next);
+  assert.equal(verdict.status, 'ok');
+  assert.equal(verdict.solved, true);
+  assert.deepEqual(applied.next.left.x, { n: 1, d: 1 });
+  assert.deepEqual(applied.next.right.c, { n: 11, d: 1 });
+});
+
+test('relace projde celou rovnici -x + 49 = 38 přes vynásobení -1', () => {
+  const s = createStepSession({ equation: { left: expr(-1, 1, 49, 1), right: expr(0, 1, 38, 1) } });
+
+  s.submitOperation({ kind: 'sub', operand: f(49) });
+  s.submitValue({ kind: 'int', value: -11 });
+  assert.equal(s.equationText, '-x = -11');
+
+  const res = s.submitOperation({ kind: 'mul', operand: makeFraction(-1) });
+  assert.notEqual(res.status, 'invalid');
+  assert.notEqual(res.status, 'noProgress');
+  while (s.phase === 'values') {
+    s.submitValue({ kind: 'int', value: 11 });
+  }
+  assert.equal(s.isDone, true);
+  assert.equal(s.getOutcome().mistakes, 0);
+});
+
+test('dělení -1 je rovnocenná cesta k témuž', () => {
+  const s = createStepSession({ equation: { left: expr(-1, 1, 0, 1), right: expr(0, 1, -11, 1) } });
+  const res = s.submitOperation({ kind: 'div', operand: makeFraction(-1) });
+  assert.notEqual(res.status, 'invalid');
+  assert.notEqual(res.status, 'noProgress');
+  while (s.phase === 'values') {
+    s.submitValue({ kind: 'int', value: 11 });
+  }
+  assert.equal(s.isDone, true);
+});

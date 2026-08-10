@@ -107,7 +107,16 @@ export function evaluateExpr(e, xValue) {
 export function solveLinearSteps(left, right) {
   // Didakticky lepší cesta u 'a - x = b': místo práce se záporným -x
   // přesuneme x doprava ('Přičti x k oběma stranám') a řešíme prohozené strany.
-  if (effectiveX(left).n < 0 && effectiveX(right).n === 0) {
+  //
+  // Když ale vlevo stojí samotné '-x' (bez konstanty), je prohození oklika:
+  // '-x = -11' se řeší jedním vynásobením -1, kdežto prohozením by vznikla
+  // rada 'přičti x' a teprve pak 'přičti 11', což ze současného stavu
+  // vypadá jako nesmysl. Proto podmínka na nenulovou konstantu vlevo.
+  if (
+    effectiveX(left).n < 0 &&
+    effectiveX(right).n === 0 &&
+    effectiveC(left).n !== 0
+  ) {
     return solveLinearSteps(right, left);
   }
 

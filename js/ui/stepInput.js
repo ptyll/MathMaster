@@ -240,7 +240,10 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
     input = createAnswerInput(inputHost, {
       expected: null,
       mode: 'int',
-      allowSign: false, // směr určuje zvolená operace
+      // U sčítání a odčítání směr určuje zvolená operace, znaménko by jen
+      // mátlo ('odečti -3' = 'přičti 3'). U násobení a dělení je ale
+      // záporný činitel jediná cesta, jak z '-x = -11' udělat 'x = 11'.
+      allowSign: selectedKind === 'mul' || selectedKind === 'div',
       confirmLabel: 'Proveď na obou stranách',
       onSubmit: (result) => handleOperand(result.value),
     });
@@ -313,6 +316,9 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
     renderHistory();
     renderVisualization();
     if (session.isDone) {
+      // Bez tohohle by na obrazovce zůstal maskovaný náhled 'x = ?' a hráč
+      // by výsledek, který právě spočítal, nikdy neviděl napsaný.
+      stateEl.textContent = session.equationText;
       opRow.hidden = true;
       termToggle.hidden = true;
       opChip.hidden = true;
@@ -338,12 +344,11 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
     if (value === null) {
       return;
     }
-    // Operand je vždy kladná velikost - směr určuje zvolená operace,
-    // jinak by '− -3' znamenalo totéž co '+ 3' a hráče to jen mate.
-    const magnitude =
-      value.kind === 'int'
-        ? { n: Math.abs(value.value), d: 1 }
-        : { n: Math.abs(value.n), d: value.d };
+    // U sčítání a odčítání bereme jen velikost - směr nese zvolená operace.
+    // U násobení a dělení znaménko ponecháváme, jinak by nešlo vynásobit -1.
+    const keepSign = selectedKind === 'mul' || selectedKind === 'div';
+    const raw = value.kind === 'int' ? { n: value.value, d: 1 } : { n: value.n, d: value.d };
+    const magnitude = keepSign ? raw : { n: Math.abs(raw.n), d: raw.d };
 
     applyResult(session.submitOperation({ kind: selectedKind, operand: magnitude, term }));
   }

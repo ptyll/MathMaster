@@ -797,3 +797,55 @@ test('kroky, které od cíle vzdalují, zůstávají odmítnuté', () => {
   const added = applyOperation(start, { kind: 'add', operand: f(5) }).next;
   assert.equal(checkStep(start, added).status, 'noProgress');
 });
+
+/* --- zlomkové pásy nesmí prozradit odpověď (UCV-STEP-002) --- */
+
+function fractionExercise(a, b, kind = 'add') {
+  return { topic: 'fractions', kind, operands: [a, b], steps: [], answer: { kind: 'fraction', n: 1, d: 1 } };
+}
+
+test('pás zlomku, na který se hra ptá, nemá napsané číslo', () => {
+  const s = createStepSession(fractionExercise({ n: 1, d: 2 }, { n: 2, d: 3 }));
+
+  // před volbou jmenovatele: oba v původním tvaru
+  assert.deepEqual(s.bars.map((x) => x.label), ['1/2', '2/3']);
+
+  s.submitValue({ kind: 'int', value: 6 });
+  assert.equal(s.fractionPhase, 'numerator-a');
+  // ptáme se na první -> ten je v cílové mřížce bez čísla,
+  // druhý zůstává původní, aby neprozradil svou odpověď dopředu
+  assert.deepEqual(s.bars.map((x) => x.label), ['?/6', '2/3']);
+  assert.equal(s.bars[0].d, 6, 'mřížka už je cílová, jen bez popisku');
+  assert.equal(s.bars[0].n, 3, 'dítě si díly spočítá z obrázku');
+
+  s.submitValue({ kind: 'int', value: 3 });
+  assert.equal(s.fractionPhase, 'numerator-b');
+  assert.deepEqual(s.bars.map((x) => x.label), ['3/6', '?/6']);
+
+  s.submitValue({ kind: 'int', value: 4 });
+  assert.equal(s.fractionPhase, 'combine');
+  assert.deepEqual(s.bars.map((x) => x.label), ['3/6', '4/6']);
+});
+
+test('zlomek, který společného jmenovatele už má, se nepřepisuje', () => {
+  // 1/2 + 3/4 -> společný 4; ptát se 'přepiš 3/4 na jmenovatele 4' je prázdná otázka
+  const s = createStepSession(fractionExercise({ n: 1, d: 2 }, { n: 3, d: 4 }));
+  s.submitValue({ kind: 'int', value: 4 });
+  assert.equal(s.fractionPhase, 'numerator-a');
+  s.submitValue({ kind: 'int', value: 2 });
+  assert.equal(s.fractionPhase, 'combine', 'druhý zlomek se přeskočí');
+  assert.match(s.question.prompt, /Sečti čitatele/);
+});
+
+test('když mají zlomky stejného jmenovatele, přepisování odpadá celé', () => {
+  const s = createStepSession(fractionExercise({ n: 1, d: 5 }, { n: 2, d: 5 }));
+  assert.equal(s.fractionPhase, 'combine');
+  assert.deepEqual(s.bars.map((x) => x.label), ['1/5', '2/5']);
+});
+
+test('větší společný jmenovatel než nejmenší pásy nerozbije', () => {
+  const s = createStepSession(fractionExercise({ n: 1, d: 2 }, { n: 2, d: 3 }));
+  s.submitValue({ kind: 'int', value: 12 });
+  assert.deepEqual(s.bars.map((x) => x.label), ['?/12', '2/3']);
+  assert.equal(s.bars[0].n, 6);
+});

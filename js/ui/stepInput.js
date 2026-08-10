@@ -176,7 +176,9 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
       // Pásy pod sebou, ne vedle sebe - jde o porovnání velikostí.
       vizHost.classList.add('step-viz--bars');
       for (const f of session.bars) {
-        vizHost.appendChild(createFractionBar(f, `${f.n}/${f.d}`));
+        // Popisek si určuje relace - u zlomku, na který se právě ptá,
+        // je to '?/6', ne hotová odpověď.
+        vizHost.appendChild(createFractionBar(f, f.label ?? `${f.n}/${f.d}`));
       }
       return;
     }

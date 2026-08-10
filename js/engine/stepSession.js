@@ -325,6 +325,35 @@ function createFractionSession(exercise) {
     recomputeAfterDenominator();
   }
 
+  /**
+   * Další fáze přepisování od zadaného indexu. Zlomek, který společného
+   * jmenovatele už má, není co přepisovat - ptát se na něj by byla
+   * prázdná otázka ('Přepiš 3/4 na jmenovatele 4').
+   */
+  function nextRewritePhase(fromIndex) {
+    if (fromIndex <= 0 && a.d !== common) {
+      return 'numerator-a';
+    }
+    if (fromIndex <= 1 && b.d !== common) {
+      return 'numerator-b';
+    }
+    return 'combine';
+  }
+
+  const labelledBar = (n, d) => ({ n, d, label: `${n}/${d}` });
+
+  function barFor(i) {
+    const source = i === 0 ? a : b;
+    const asking =
+      (phase === 'numerator-a' && i === 0) || (phase === 'numerator-b' && i === 1);
+    if (asking) {
+      return { n: numerators[i], d: common, label: `?/${common}` };
+    }
+    const rewritten =
+      i === 0 ? phase !== 'numerator-a' : phase === 'combine' || phase === 'simplify';
+    return rewritten ? labelledBar(numerators[i], common) : labelledBar(source.n, source.d);
+  }
+
   const session = {
     kind: 'fraction',
     isActive: true,
@@ -363,18 +392,21 @@ function createFractionSession(exercise) {
       return `${formatNumber(a)} ${operation} ${formatNumber(b)}`;
     },
 
-    /** Zlomky k vykreslení pásy - vždy v tvaru, ve kterém hráč právě je. */
+    /**
+     * Zlomky k vykreslení pásy. Zlomek, na který se hra právě ptá, se
+     * kreslí už v CÍLOVÉ mřížce, ale bez čísla ('?/6') - dítě si díly
+     * spočítá, což je přesně k čemu pásy jsou. Číslo by byla odpověď
+     * opsaná vedle otázky. Druhý zlomek zůstává v původním tvaru, aby
+     * neprozrazoval svou odpověď dopředu.
+     */
     get bars() {
       if (combined !== null) {
-        return [{ n: combined, d: common }];
+        return [labelledBar(combined, common)];
       }
       if (numerators === null) {
-        return [{ ...a }, { ...b }];
+        return [labelledBar(a.n, a.d), labelledBar(b.n, b.d)];
       }
-      return [
-        { n: numerators[0], d: common },
-        { n: numerators[1], d: common },
-      ];
+      return [barFor(0), barFor(1)];
     },
 
     get question() {
@@ -442,7 +474,7 @@ function createFractionSession(exercise) {
         const smallest = lcm(a.d, b.d);
         const note = common === smallest ? null : `Správně! Jde to i s menším: ${smallest}.`;
         history.push({ operationText: `Společný jmenovatel ${common}`, equationText: '' });
-        phase = 'numerator-a';
+        phase = nextRewritePhase(0);
         mistakesOnStep = 0;
         return { status: 'partial', note };
       }
@@ -457,7 +489,7 @@ function createFractionSession(exercise) {
           operationText: `${formatNumber(source)} = ${numerators[index]}/${common}`,
           equationText: '',
         });
-        phase = index === 0 ? 'numerator-b' : 'combine';
+        phase = index === 0 ? nextRewritePhase(1) : 'combine';
         mistakesOnStep = 0;
         return { status: 'partial', note: null };
       }

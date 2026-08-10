@@ -18,18 +18,61 @@ import {
   isWhole,
 } from './fractions.js';
 
-/** Zkratka pro sestavení výrazu z celých čísel nebo zlomků. */
+const ONE = Object.freeze({ n: 1, d: 1 });
+
+/**
+ * Zkratka pro sestavení výrazu z celých čísel nebo zlomků.
+ * Výraz je { f, x, c } a znamená f * (x*X + c). Bez závorky je f = 1,
+ * takže x a c rovnou nesou koeficient a konstantu.
+ */
 export function expr(xN, xD, cN, cD) {
-  return { x: makeFraction(xN, xD), c: makeFraction(cN, cD) };
+  return { f: { ...ONE }, x: makeFraction(xN, xD), c: makeFraction(cN, cD) };
+}
+
+/** Součinový tvar k(x + b) - závorka, kterou lze roznásobit nebo vydělit. */
+export function factoredExpr(kN, kD, xN, xD, cN, cD) {
+  return { f: makeFraction(kN, kD), x: makeFraction(xN, xD), c: makeFraction(cN, cD) };
+}
+
+/** Činitel před závorkou (1, když závorka není). */
+export function factorOf(e) {
+  return e.f ?? ONE;
+}
+
+export function isFactored(e) {
+  const f = factorOf(e);
+  return !(f.n === 1 && f.d === 1);
+}
+
+/** Skutečný koeficient u x po roznásobení. */
+export function effectiveX(e) {
+  return multiplyFractions(factorOf(e), e.x);
+}
+
+/** Skutečná konstanta po roznásobení. */
+export function effectiveC(e) {
+  return multiplyFractions(factorOf(e), e.c);
+}
+
+/** Roznásobí závorku: k(x + b) -> kx + kb. */
+export function expandExpr(e) {
+  return { f: { ...ONE }, x: effectiveX(e), c: effectiveC(e) };
 }
 
 /** Hluboká kopie výrazu - kroky nesou snímky stavu, ne živé odkazy. */
 export function cloneExpr(e) {
-  return { x: { ...e.x }, c: { ...e.c } };
+  return { f: { ...factorOf(e) }, x: { ...e.x }, c: { ...e.c } };
 }
 
-/** Formátuje výraz pro zobrazení: '3x + 4', 'x', '-x', '(2/3)x - 1/2', '5'. */
+/** Formátuje výraz: '3x + 4', 'x', '-x', '(2/3)x - 1/2', '5', '2(x + 10)'. */
 export function formatExpr(e) {
+  if (isFactored(e)) {
+    return `${formatNumber(factorOf(e))}(${formatPlain(e)})`;
+  }
+  return formatPlain(e);
+}
+
+function formatPlain(e) {
   const hasX = e.x.n !== 0;
   const hasC = e.c.n !== 0;
   const xTerm = !hasX
@@ -54,7 +97,7 @@ export function formatExpr(e) {
 /** Dosadí hodnotu za x a vrátí hodnotu výrazu jako zlomek. */
 export function evaluateExpr(e, xValue) {
   const x = typeof xValue === 'number' ? makeFraction(xValue) : xValue;
-  return addFractions(multiplyFractions(e.x, x), e.c);
+  return addFractions(multiplyFractions(effectiveX(e), x), effectiveC(e));
 }
 
 /**
@@ -64,13 +107,13 @@ export function evaluateExpr(e, xValue) {
 export function solveLinearSteps(left, right) {
   // Didakticky lepší cesta u 'a - x = b': místo práce se záporným -x
   // přesuneme x doprava ('Přičti x k oběma stranám') a řešíme prohozené strany.
-  if (left.x.n < 0 && right.x.n === 0) {
+  if (effectiveX(left).n < 0 && effectiveX(right).n === 0) {
     return solveLinearSteps(right, left);
   }
 
   const steps = [];
-  let l = { x: { ...left.x }, c: { ...left.c } };
-  let r = { x: { ...right.x }, c: { ...right.c } };
+  let l = cloneExpr(left);
+  let r = cloneExpr(right);
 
   const push = (operation, explanation) => {
     steps.push({
@@ -84,6 +127,22 @@ export function solveLinearSteps(left, right) {
       rightExpr: cloneExpr(r),
     });
   };
+
+  // 0. Závorka. Dělení činitelem je kratší cesta než roznásobení:
+  //    2(x + 10) = 36  ->  x + 10 = 18. Roznásobení je stejně platné,
+  //    krokový režim ho hráči nabízí jako druhou možnost.
+  if (isFactored(r)) {
+    r = expandExpr(r);
+  }
+  if (isFactored(l)) {
+    const k = factorOf(l);
+    l = { f: { ...ONE }, x: { ...l.x }, c: { ...l.c } };
+    r = { f: { ...ONE }, x: divideFractions(r.x, k), c: divideFractions(r.c, k) };
+    push(
+      `Vyděl obě strany ${formatNumber(k)}`,
+      'Před závorkou stojí činitel - dělením se ho zbavíme celého najednou a závorka zmizí.'
+    );
+  }
 
   // 1. Přesunout x-člen z pravé strany doleva.
   if (r.x.n !== 0) {
@@ -157,9 +216,9 @@ export function solveLinearSteps(left, right) {
   return steps;
 }
 
-/** Vrátí řešení rovnice left = right jako zlomek: x = (r.c - l.c) / (l.x - r.x). */
+/** Vrátí řešení rovnice left = right jako zlomek. Počítá z roznásobených hodnot. */
 export function solvedValue(left, right) {
-  const numerator = subtractFractions(right.c, left.c);
-  const denominator = subtractFractions(left.x, right.x);
+  const numerator = subtractFractions(effectiveC(right), effectiveC(left));
+  const denominator = subtractFractions(effectiveX(left), effectiveX(right));
   return divideFractions(numerator, denominator);
 }

@@ -22,6 +22,14 @@ export function parseSide(text) {
     return result;
   }
 
+  // Součinový tvar '2(x + 10)': tolik pytlíků, kolik je činitel,
+  // a v každém je obsah závorky.
+  m = trimmed.match(/^(\d+)\((.+)\)$/);
+  if (m) {
+    result.xTerm = { count: parseInt(m[1], 10), label: m[2], grouped: true };
+    return result;
+  }
+
   // x-člen: 'x', '-x', '3x', '(2/3)x' + volitelná konstanta
   m = trimmed.match(/^(-?)(\d*)x(?:\s*([+-])\s*(.+))?$/) ?? trimmed.match(/^(\(\d+\/\d+\))x(?:\s*([+-])\s*(.+))?$/);
   if (!m) {

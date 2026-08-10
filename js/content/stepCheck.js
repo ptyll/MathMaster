@@ -18,15 +18,26 @@ import {
   divideFractions,
   formatNumber,
 } from './fractions.js';
-import { cloneExpr, solvedValue } from './solver.js';
+import {
+  cloneExpr,
+  solvedValue,
+  factorOf,
+  isFactored,
+  effectiveX,
+  effectiveC,
+  expandExpr,
+} from './solver.js';
 
-/** Operace, které hráč může zvolit. Násobit/dělit lze jen číslem, ne x-členem. */
-export const OPERATION_KINDS = Object.freeze(['add', 'sub', 'mul', 'div']);
+/**
+ * Operace, které hráč může zvolit. Násobit/dělit lze jen číslem, ne x-členem.
+ * 'expand' roznásobí závorku a operand nemá.
+ */
+export const OPERATION_KINDS = Object.freeze(['add', 'sub', 'mul', 'div', 'expand']);
 
 const fractionsIdentical = (a, b) => a.n === b.n && a.d === b.d;
 
-/** Je výraz tvaru samotné 'x' (koeficient 1, konstanta 0)? */
-const isBareX = (e) => e.x.n === 1 && e.x.d === 1 && e.c.n === 0;
+/** Je výraz tvaru samotné 'x' (koeficient 1, konstanta 0, bez závorky)? */
+const isBareX = (e) => !isFactored(e) && e.x.n === 1 && e.x.d === 1 && e.c.n === 0;
 
 /** Jednotková hodnota (koeficient 1) - cíl úprav u x-členu. */
 const isUnit = (f) => f.n === 1 && f.d === 1;
@@ -45,6 +56,30 @@ export function applyOperation(state, operation) {
 
   if (!OPERATION_KINDS.includes(kind)) {
     throw new Error(`Neznámá operace: ${kind}`);
+  }
+
+  if (kind === 'expand') {
+    if (!isFactored(state.left) && !isFactored(state.right)) {
+      return { status: 'invalid', next: null, note: 'Tady žádná závorka k roznásobení není.' };
+    }
+    return {
+      status: 'ok',
+      next: { left: expandExpr(state.left), right: expandExpr(state.right) },
+      note: null,
+    };
+  }
+
+  // Přičítat a odečítat přes neroznásobenou závorku nejde - k(x+b) + n
+  // už není součin a hráč by dostal tvar, který neumíme zobrazit.
+  if (
+    (kind === 'add' || kind === 'sub') &&
+    (isFactored(state.left) || isFactored(state.right))
+  ) {
+    return {
+      status: 'invalid',
+      next: null,
+      note: 'Přes závorku se přičítat nedá. Nejdřív ji roznásob, nebo obě strany vyděl číslem před ní.',
+    };
   }
   if (term !== 'const' && term !== 'x') {
     throw new Error(`Neznámý druh operandu: ${term}`);
@@ -73,31 +108,32 @@ export function applyOperation(state, operation) {
   }
 
   const applyToSide = (side) => {
+    const f = factorOf(side);
     switch (kind) {
       case 'add':
         return term === 'x'
-          ? { x: addFractions(side.x, operand), c: { ...side.c } }
-          : { x: { ...side.x }, c: addFractions(side.c, operand) };
+          ? { f: { ...f }, x: addFractions(side.x, operand), c: { ...side.c } }
+          : { f: { ...f }, x: { ...side.x }, c: addFractions(side.c, operand) };
       case 'sub':
         return term === 'x'
-          ? { x: subtractFractions(side.x, operand), c: { ...side.c } }
-          : { x: { ...side.x }, c: subtractFractions(side.c, operand) };
+          ? { f: { ...f }, x: subtractFractions(side.x, operand), c: { ...side.c } }
+          : { f: { ...f }, x: { ...side.x }, c: subtractFractions(side.c, operand) };
       case 'mul':
-        return {
-          x: multiplyFractions(side.x, operand),
-          c: multiplyFractions(side.c, operand),
-        };
+        // U závorky škálujeme činitele, ne její obsah - dělení činitelem
+        // je pak přesně ta úprava, která závorku odstraní.
+        return isFactored(side)
+          ? { f: multiplyFractions(f, operand), x: { ...side.x }, c: { ...side.c } }
+          : { f: { ...f }, x: multiplyFractions(side.x, operand), c: multiplyFractions(side.c, operand) };
       default:
-        return {
-          x: divideFractions(side.x, operand),
-          c: divideFractions(side.c, operand),
-        };
+        return isFactored(side)
+          ? { f: divideFractions(f, operand), x: { ...side.x }, c: { ...side.c } }
+          : { f: { ...f }, x: divideFractions(side.x, operand), c: divideFractions(side.c, operand) };
     }
   };
 
   const next = { left: applyToSide(state.left), right: applyToSide(state.right) };
 
-  if (next.left.x.n === 0 && next.right.x.n === 0) {
+  if (effectiveX(next.left).n === 0 && effectiveX(next.right).n === 0) {
     return {
       status: 'invalid',
       next: null,
@@ -118,24 +154,30 @@ export function applyOperation(state, operation) {
  * 'konstanta u x' jevila jako krok bez pokroku (5x + 10 = 6x).
  */
 export function progressScore(state) {
+  // Neroznásobená závorka je práce navíc - bez tohohle členu by dělení
+  // činitelem ani roznásobení nevyšlo jako pokrok a hra by se zasekla.
+  const brackets = (isFactored(state.left) ? 1 : 0) + (isFactored(state.right) ? 1 : 0);
+
   const sideScore = (withX, other) =>
-    2 * (other.x.n !== 0 ? 1 : 0) + (withX.c.n !== 0 ? 1 : 0) + (isUnit(withX.x) ? 0 : 1);
+    2 * (effectiveX(other).n !== 0 ? 1 : 0) +
+    (effectiveC(withX).n !== 0 ? 1 : 0) +
+    (isUnit(effectiveX(withX)) ? 0 : 1);
 
   const options = [];
-  if (state.left.x.n !== 0) {
+  if (effectiveX(state.left).n !== 0) {
     options.push(sideScore(state.left, state.right));
   }
-  if (state.right.x.n !== 0) {
+  if (effectiveX(state.right).n !== 0) {
     options.push(sideScore(state.right, state.left));
   }
-  return options.length > 0 ? Math.min(...options) : 0;
+  return brackets + (options.length > 0 ? Math.min(...options) : 0);
 }
 
 /** Je rovnice vyřešená, tedy ve tvaru x = číslo (nebo číslo = x)? */
 export function isSolved(state) {
   return (
-    (isBareX(state.left) && state.right.x.n === 0) ||
-    (isBareX(state.right) && state.left.x.n === 0)
+    (isBareX(state.left) && effectiveX(state.right).n === 0) ||
+    (isBareX(state.right) && effectiveX(state.left).n === 0)
   );
 }
 
@@ -221,6 +263,9 @@ export function partQuestion(slot) {
 
 /** Text operace v metafoře váhy: 'Odečti 4 z obou stran'. */
 export function describeOperation(operation) {
+  if (operation.kind === 'expand') {
+    return 'Roznásob závorku';
+  }
   const term = operation.term ?? 'const';
   const amount =
     term === 'x'

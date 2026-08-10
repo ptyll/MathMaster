@@ -10,11 +10,7 @@
  * odměna za pozdější misi. Úlohy s jediným krokem (krácení, rozšiřování,
  * porovnávání zlomků) si režim vypnou samy, příznak jim nevadí.
  * Krokový příklad trvá zhruba trojnásobek času, proto mají mise míň příkladů.
- *
- * Obtížnost 5 (a(x+b)=c) mise záměrně nepoužívají: generátor drží rovnici
- * už roznásobenou, takže by krokový režim ukázal 2x + 4 = 16 místo
- * 2(x + 2) = 16. Závorky bude umět až faktorizovaný tvar rovnice
- * a operace 'roznásob závorku'. Stupeň 6 (x na obou stranách) je v pořádku.
+
  */
 
 export const PLANETS = [
@@ -39,7 +35,7 @@ export const PLANETS = [
     art: 'ice',
     missions: [
       { id: 'hoth-1', title: 'Ledový start', topic: 'equations', startDifficulty: 3, exerciseCount: 4, stepMode: true },
-      { id: 'hoth-2', title: 'Ledová rovnováha', topic: 'equations', startDifficulty: 4, exerciseCount: 4, stepMode: true },
+      { id: 'hoth-2', title: 'Zamrzlé závorky', topic: 'equations', startDifficulty: 5, exerciseCount: 4, stepMode: true },
       { id: 'hoth-3', title: 'Sněhová vánice', topic: 'equations', startDifficulty: 6, exerciseCount: 4, stepMode: true },
       { id: 'hoth-boss', title: 'Inkvizitor z ledu', topic: 'equations', startDifficulty: 6, boss: true, stepMode: true },
     ],

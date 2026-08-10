@@ -12,6 +12,7 @@
 import { createAnswerInput } from './answerInput.js';
 import { createBalanceScale } from './balanceScale.js';
 import { createNumberLine, createFractionBar } from './fractionVisuals.js';
+import { effectiveX, effectiveC } from '../content/solver.js';
 
 const VIZ_NOTE_PENDING = 'Váha ukazuje stav před tímhle krokem.';
 
@@ -83,6 +84,14 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
   termToggle.type = 'button';
   termToggle.className = 'btn btn-term-toggle';
 
+  // Roznásobení závorky nemá operand, proto vlastní tlačítko mimo řádek
+  // se symboly - klepnutím se provede rovnou.
+  const expandBtn = document.createElement('button');
+  expandBtn.type = 'button';
+  expandBtn.className = 'btn btn-expand';
+  expandBtn.textContent = 'Roznásob závorku';
+  expandBtn.hidden = true;
+
   // --- Hostitel vstupu hodnoty ---
   const inputHost = document.createElement('div');
   inputHost.className = 'step-value-input';
@@ -112,7 +121,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
 
   const rightCol = document.createElement('div');
   rightCol.className = 'step-col step-col-controls';
-  rightCol.append(promptEl, feedbackEl, opRow, termToggle, inputHost, backBtn);
+  rightCol.append(promptEl, feedbackEl, opRow, expandBtn, termToggle, inputHost, backBtn);
 
   root.append(leftCol, rightCol);
   container.appendChild(root);
@@ -179,15 +188,17 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
     }
     vizHost.innerHTML = '';
     const state = session.equationState;
-    const hasNegative =
-      state.left.c.n < 0 || state.right.c.n < 0 || state.left.x.n < 0 || state.right.x.n < 0;
+    const lx = effectiveX(state.left);
+    const lc = effectiveC(state.left);
+    const rx = effectiveX(state.right);
+    const rc = effectiveC(state.right);
+    const hasNegative = lc.n < 0 || rc.n < 0 || lx.n < 0 || rx.n < 0;
     if (hasNegative) {
       // Váha záporné množství neunese - stejné pravidlo jako v solutionViewer.
       // Osa značí hodnotu té strany, která je čisté číslo; když taková není,
       // nemáme co pravdivě ukázat a vizualizaci vynecháme. Nikdy nekreslíme
       // řešení rovnice - to by prozradilo odpověď.
-      const plainSide =
-        state.right.x.n === 0 ? state.right.c : state.left.x.n === 0 ? state.left.c : null;
+      const plainSide = rx.n === 0 ? rc : lx.n === 0 ? lc : null;
       if (plainSide === null) {
         // x je na obou stranách - váha ani osa to poctivě neukážou.
         // Místo obrázku řekneme proč a co s tím, ať sloupec nezeje prázdnotou.
@@ -214,6 +225,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
     stateEl.textContent = session.equationText;
     promptEl.textContent = 'Co uděláš s oběma stranami?';
     opChip.hidden = true;
+    expandBtn.hidden = !session.hasBracket;
     opRow.hidden = false;
     termToggle.hidden = false;
     backBtn.hidden = !session.canUndo;
@@ -264,6 +276,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
 
     opRow.hidden = true;
     termToggle.hidden = true;
+    expandBtn.hidden = true;
     backBtn.hidden = false;
     backBtn.textContent = '✕ Zvolit jinou operaci';
 
@@ -280,6 +293,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
   function renderFractionPhase() {
     stateEl.textContent = session.equationText;
     opChip.hidden = true;
+    expandBtn.hidden = true;
     promptEl.textContent = session.question ? session.question.prompt : '';
     opRow.hidden = true;
     termToggle.hidden = true;
@@ -302,6 +316,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
       opRow.hidden = true;
       termToggle.hidden = true;
       opChip.hidden = true;
+      expandBtn.hidden = true;
       backBtn.hidden = true;
       destroyInput();
       inputHost.innerHTML = '';
@@ -330,7 +345,11 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
         ? { n: Math.abs(value.value), d: 1 }
         : { n: Math.abs(value.n), d: value.d };
 
-    const result = session.submitOperation({ kind: selectedKind, operand: magnitude, term });
+    applyResult(session.submitOperation({ kind: selectedKind, operand: magnitude, term }));
+  }
+
+  /** Společné vyhodnocení pro operaci s operandem i pro roznásobení. */
+  function applyResult(result) {
     if (result.status === 'invalid' || result.status === 'noProgress' || result.status === 'notEquivalent') {
       setFeedback(result.note, result.status === 'invalid' ? null : 'wrong');
       onFeedback({ status: result.status, note: result.note });
@@ -404,6 +423,13 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
   termToggle.addEventListener('click', () => {
     term = term === 'x' ? 'const' : 'x';
     renderTermToggle();
+  });
+
+  expandBtn.addEventListener('click', () => {
+    selectedKind = null;
+    term = 'const';
+    updateOperationSelection();
+    applyResult(session.submitOperation({ kind: 'expand' }));
   });
 
   backBtn.addEventListener('click', () => {

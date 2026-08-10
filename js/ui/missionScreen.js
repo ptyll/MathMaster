@@ -79,8 +79,16 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
   const hintBtn = document.createElement('button');
   hintBtn.type = 'button';
   hintBtn.className = 'btn btn-hint';
-  hintBtn.textContent = '💡 Nápověda';
-  hintBtn.setAttribute('aria-label', 'Nápověda');
+  /**
+   * Popisek nápovědy se mění podle úrovně - musí se měnit i přístupný
+   * název, jinak čtečka pořád hlásí 'Nápověda' a uživatel se nedozví,
+   * že tlačítko teď nabízí víc.
+   */
+  function setHintLabel(text) {
+    hintBtn.textContent = `💡 ${text}`;
+    hintBtn.setAttribute('aria-label', text);
+  }
+  setHintLabel('Nápověda');
 
   // --- Vstup (klávesnice nebo výběr pro compare) ---
   const inputHost = document.createElement('div');
@@ -199,7 +207,7 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
     stepsPanel.hidden = true;
     stepsPanel.innerHTML = '';
     hintLevel = 0;
-    hintBtn.textContent = '💡 Nápověda';
+    setHintLabel('Nápověda');
     hintBtn.classList.remove('attention');
     closeViewer();
     destroyInput();
@@ -398,7 +406,7 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
       p.textContent = exercise.hint;
       stepsPanel.appendChild(p);
       stepsPanel.hidden = false;
-      hintBtn.textContent = '💡 Víc pomoct';
+      setHintLabel('Víc pomoct');
     } else if (hintLevel === 2) {
       stepsPanel.innerHTML = '';
       const first = exercise.steps[0];
@@ -408,10 +416,10 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
       p.append(strong, document.createTextNode(`  ${first.leftSide} = ${first.rightSide}`));
       stepsPanel.appendChild(p);
       stepsPanel.hidden = false;
-      hintBtn.textContent = '💡 Ukaž celé řešení';
+      setHintLabel('Ukaž celé řešení');
     } else {
       stepsPanel.hidden = true;
-      hintBtn.textContent = '💡 Nápověda';
+      setHintLabel('Nápověda');
       openSolutionViewer();
     }
   });

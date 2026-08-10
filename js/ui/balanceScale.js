@@ -16,11 +16,14 @@ function svgEl(tag, attrs = {}) {
   return el;
 }
 
-/** Pytlík s popiskem (neznámá). */
-function bag(x, y, label) {
+/** Pytlík s popiskem (neznámá). Šířka se přizpůsobí, aby se popisek vešel. */
+function bag(x, y, label, width = 34) {
   const g = svgEl('g');
-  g.appendChild(svgEl('rect', { x, y, width: 34, height: 30, rx: 6, fill: '#8b6f4e', stroke: '#5d4630', 'stroke-width': 2 }));
-  const text = svgEl('text', { x: x + 17, y: y + 21, 'text-anchor': 'middle', fill: '#fff', 'font-size': 15, 'font-weight': 700 });
+  g.appendChild(svgEl('rect', { x, y, width, height: 30, rx: 6, fill: '#8b6f4e', stroke: '#5d4630', 'stroke-width': 2 }));
+  // Písmo podle šířky pytlíku i délky popisku - 'x + 10' se do 26px
+  // nevejde na patnáctce, ale na devítce ano.
+  const fontSize = Math.max(8, Math.min(15, Math.floor((width - 6) / Math.max(1, label.length) * 1.7)));
+  const text = svgEl('text', { x: x + width / 2, y: y + 20, 'text-anchor': 'middle', fill: '#fff', 'font-size': fontSize, 'font-weight': 700 });
   text.textContent = label;
   g.appendChild(text);
   return g;
@@ -42,7 +45,23 @@ function panContents(panX, baseY, side) {
   }
   const hasConstant = !!side.constantText && side.constantText !== '0';
 
-  if (side.xTerm) {
+  if (side.xTerm && side.xTerm.grouped) {
+    // Závorka: tolik stejných pytlíků, kolik je činitel, a v každém obsah
+    // závorky. Právě tohle dělá z '2(x + 10)' názornou věc.
+    const count = side.xTerm.count;
+    if (count <= 3) {
+      const gap = 3;
+      const width = Math.floor((84 - (count - 1) * gap) / count);
+      let cx = panX + 4;
+      for (let i = 0; i < count; i++) {
+        g.appendChild(bag(cx, baseY - 34, side.xTerm.label, width));
+        cx += width + gap;
+      }
+    } else {
+      // Víc než tři skupiny se do misky nevejdou čitelně.
+      g.appendChild(bag(panX + 4, baseY - 34, `${count}(${side.xTerm.label})`, 84));
+    }
+  } else if (side.xTerm) {
     // Miska je široká 90. Když na ní leží i kostky, zbude na pytlíky jen
     // levá polovina - proto se víc než jedno x kreslí jako jeden pytlík
     // s koeficientem. Jinak by pytlíky přetekly přes misku na sloup váhy.

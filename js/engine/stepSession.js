@@ -23,7 +23,7 @@ import {
   describeOperation,
   cloneState,
 } from '../content/stepCheck.js';
-import { formatExpr } from '../content/solver.js';
+import { formatExpr, isFactored } from '../content/solver.js';
 import {
   makeFraction,
   fractionsEqual,
@@ -119,6 +119,10 @@ function createEquationSession(exercise) {
     },
     get pendingOperationText() {
       return pending ? describeOperation(pending.operation) : null;
+    },
+    /** Je na některé straně neroznásobená závorka? UI podle toho nabídne operaci. */
+    get hasBracket() {
+      return isFactored(state.left) || isFactored(state.right);
     },
     get question() {
       if (!pending || pending.slotIndex >= pending.slots.length) {
@@ -265,6 +269,8 @@ function createEquationSession(exercise) {
 
 /** Formátuje stranu rovnice, kde null znamená dosud nedoplněnou hodnotu. */
 function formatSideWithBlanks(side) {
+  // Maskovaná strana je vždy už roznásobená: závorka mění jen činitele,
+  // a na ten se relace neptá. Proto tu činitele neřešíme.
   if (side.x === null || side.c === null) {
     const xPart = side.x === null ? '?x' : side.x.n === 0 ? '' : formatXTerm(side.x);
     const negative = side.c !== null && side.c.n < 0;

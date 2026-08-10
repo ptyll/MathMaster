@@ -5,7 +5,7 @@
  */
 
 import { createPrng } from './prng.js';
-import { expr, formatExpr, solveLinearSteps, solvedValue, cloneExpr } from './solver.js';
+import { expr, factoredExpr, formatExpr, solveLinearSteps, solvedValue, cloneExpr, effectiveX, effectiveC } from './solver.js';
 import { isWhole } from './fractions.js';
 
 /**
@@ -33,11 +33,13 @@ function buildExercise({ topic, kind, form, left, right, text, hint, seed, diffi
   const steps = solveLinearSteps(left, right);
   const value = answer ?? solvedValue(left, right);
   // Typická chyba: u ax+b=c záměna o koeficient, u x+a=b o konstantu.
+  const lx = effectiveX(left);
+  const lc = effectiveC(left);
   const delta =
-    Math.abs(left.x.n) > 1 && left.x.d === 1
-      ? Math.abs(left.x.n)
-      : Math.abs(left.c.n) > 0 && left.c.d === 1
-        ? Math.abs(left.c.n)
+    Math.abs(lx.n) > 1 && lx.d === 1
+      ? Math.abs(lx.n)
+      : Math.abs(lc.n) > 0 && lc.d === 1
+        ? Math.abs(lc.n)
         : 2;
   return {
     topic,
@@ -162,7 +164,9 @@ export function generateLinearEquation(seed, difficulty = 1) {
       topic: 'equations',
       kind: 'linear',
       form: 'a(x+b)=c',
-      left: expr(a, 1, a * b, 1),
+      // Součinový tvar, ne roznásobený - jinak by krokový režim závorku
+      // nikdy neukázal a mise o závorkách by žádné neměla.
+      left: factoredExpr(a, 1, 1, 1, b, 1),
       right: expr(0, 1, c, 1),
       text: `${a}(x + ${b}) = ${c}`,
       hint: `Závorku rozbalíš tak, že ${a} vynásobíš x i ${a} vynásobíš ${b}. Nebo nejdřív obě strany vydělíš ${a}.`,

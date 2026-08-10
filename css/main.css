@@ -1506,3 +1506,12 @@ p {
   font-weight: 600;
   color: var(--color-accent);
 }
+
+/* Roznásobení závorky - operace bez operandu, proto vlastní tlačítko */
+.btn-expand {
+  min-height: var(--touch-target);
+  font-size: 1rem;
+  background: var(--color-bg-panel);
+  color: var(--color-accent);
+  border: 2px solid var(--color-accent);
+}

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { expr, solveLinearSteps } from '../js/content/solver.js';
+import { expr, factoredExpr, solveLinearSteps, isFactored, factorOf } from '../js/content/solver.js';
 import {
   applyOperation,
   checkStep,
@@ -28,8 +28,8 @@ test('kroky solveru nesou strojově čitelný stav rovnice', () => {
     assert.ok(step.leftExpr && step.rightExpr, 'každý krok má leftExpr i rightExpr');
   }
   const last = steps[steps.length - 1];
-  assert.deepEqual(last.leftExpr, { x: { n: 1, d: 1 }, c: { n: 0, d: 1 } });
-  assert.deepEqual(last.rightExpr, { x: { n: 0, d: 1 }, c: { n: 5, d: 1 } });
+  assert.deepEqual(last.leftExpr, { f: { n: 1, d: 1 }, x: { n: 1, d: 1 }, c: { n: 0, d: 1 } });
+  assert.deepEqual(last.rightExpr, { f: { n: 1, d: 1 }, x: { n: 0, d: 1 }, c: { n: 5, d: 1 } });
 });
 
 test('strukturovaný stav je snímek, ne živý odkaz na průběžné l a r', () => {
@@ -379,8 +379,18 @@ test('každou vygenerovanou rovnici lze projít krokovou relací podle solveru',
   }
 });
 
-/** Referenční strategie: přesuň x doleva, konstanty doprava, pak vyděl koeficientem. */
+/**
+ * Referenční strategie: zbav se závorky, přesuň x doleva, konstanty doprava,
+ * nakonec vyděl koeficientem.
+ */
 function suggestOperation(st) {
+  // Přes závorku nejde přičítat - nejdřív dělení činitelem.
+  if (isFactored(st.left)) {
+    return { kind: 'div', operand: factorOf(st.left) };
+  }
+  if (isFactored(st.right)) {
+    return { kind: 'expand' };
+  }
   if (st.right.x.n !== 0) {
     return st.right.x.n > 0
       ? { kind: 'sub', operand: st.right.x, term: 'x' }
@@ -516,15 +526,75 @@ test('mise umí vygenerovat všechny tvary rovnic včetně závorek a x na obou 
   assert.ok(forms.has('ax+b=cx+d'), 'x na obou stranách musí jít vygenerovat');
 });
 
-test('mise nesahají po obtížnosti se závorkami, dokud ji krokový režim neumí', async () => {
+test('generátor drží závorku v součinovém tvaru, ne roznásobenou', () => {
+  const ex = generateLinearEquation(1234, 3);
+  assert.equal(ex.form, 'a(x+b)=c');
+  assert.equal(isFactored(ex.equation.left), true, 'krokový režim musí závorku zobrazit');
+  assert.match(ex.text, /^\d+\(x \+ \d+\) = \d+$/);
+});
+
+test('závorku lze vyřešit dělením činitelem', () => {
+  // 2(x + 10) = 36  ->  x + 10 = 18  ->  x = 8
+  const st = { left: factoredExpr(2, 1, 1, 1, 10, 1), right: expr(0, 1, 36, 1) };
+  const s = createStepSession({ equation: st });
+  assert.equal(s.hasBracket, true);
+
+  s.submitOperation({ kind: 'div', operand: f(2) });
+  s.submitValue({ kind: 'int', value: 18 });
+  assert.equal(s.equationText, 'x + 10 = 18');
+  assert.equal(s.hasBracket, false);
+
+  s.submitOperation({ kind: 'sub', operand: f(10) });
+  s.submitValue({ kind: 'int', value: 8 });
+  assert.equal(s.isDone, true);
+  assert.equal(s.getOutcome().mistakes, 0);
+});
+
+test('závorku lze vyřešit i roznásobením', () => {
+  const st = { left: factoredExpr(2, 1, 1, 1, 10, 1), right: expr(0, 1, 36, 1) };
+  const s = createStepSession({ equation: st });
+
+  const res = s.submitOperation({ kind: 'expand' });
+  assert.notEqual(res.status, 'invalid');
+  s.submitValue({ kind: 'int', value: 2 });   // 2 * x
+  s.submitValue({ kind: 'int', value: 20 });  // 2 * 10
+  assert.equal(s.equationText, '2x + 20 = 36');
+
+  s.submitOperation({ kind: 'sub', operand: f(20) });
+  s.submitValue({ kind: 'int', value: 16 });
+  s.submitOperation({ kind: 'div', operand: f(2) });
+  s.submitValue({ kind: 'int', value: 8 });
+  assert.equal(s.isDone, true);
+  assert.equal(s.getOutcome().mistakes, 0);
+});
+
+test('přes závorku nejde přičítat a hra to vysvětlí', () => {
+  const st = { left: factoredExpr(2, 1, 1, 1, 10, 1), right: expr(0, 1, 36, 1) };
+  const s = createStepSession({ equation: st });
+  const res = s.submitOperation({ kind: 'sub', operand: f(10) });
+  assert.equal(res.status, 'invalid');
+  assert.match(res.note, /roznásob|vyděl/i);
+  assert.equal(s.getOutcome().mistakes, 0, 'neproveditelná operace není chyba v počítání');
+});
+
+test('roznásobení mimo závorku hra odmítne', () => {
+  const s = createStepSession({ equation: { left: expr(3, 1, 4, 1), right: expr(0, 1, 19, 1) } });
+  assert.equal(s.hasBracket, false);
+  const res = s.submitOperation({ kind: 'expand' });
+  assert.equal(res.status, 'invalid');
+});
+
+test('mise Zamrzlé závorky skutečně zadává závorky', async () => {
   const { PLANETS } = await import('../js/content/planets.js');
-  // Generátor drží a(x+b)=c už roznásobené, takže by krokový režim závorku
-  // nikdy nezobrazil. Než přibude faktorizovaný tvar, mise stupeň 5 nezadávají.
-  for (const planet of PLANETS) {
-    for (const mission of planet.missions) {
-      assert.notEqual(mission.startDifficulty, 5, `${mission.id} startuje na stupni se závorkami`);
-    }
+  const { generateForTopic } = await import('../js/engine/mission.js');
+  const mission = PLANETS.find((p) => p.id === 'hoth').missions.find((m) => m.id === 'hoth-2');
+  let h = 1000;
+  for (const ch of mission.id) {
+    h = (h * 31 + ch.codePointAt(0)) % 1000000;
   }
+  const ex = generateForTopic('equations', h + 7919, mission.startDifficulty, 0);
+  assert.equal(ex.form, 'a(x+b)=c', 'mise o závorkách musí zadat závorku');
+  assert.equal(isFactored(ex.equation.left), true);
 });
 
 test('rovnice s x na obou stranách se dá vyřešit odečtením x-členu', () => {

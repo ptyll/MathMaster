@@ -57,6 +57,10 @@ function render(screen, context = {}) {
   app.innerHTML = '';
   const el = document.createElement('section');
   el.className = `screen screen-${screen}`;
+  // Připojit PŘED stavbou obrazovky: v odpojeném podstromu prohlížeč nepočítá
+  // rozložení, takže všechno, co si ho při vzniku vyžádá (mapa se posouvá na
+  // rozehranou planetu přes scrollIntoView), by tiše nic neudělalo.
+  app.appendChild(el);
 
   if (screen === SCREENS.INTRO) {
     const screen_ = createIntroScreen(el, {
@@ -121,8 +125,6 @@ function render(screen, context = {}) {
     });
     screenCleanup = () => screen_.destroy();
   }
-
-  app.appendChild(el);
 
   // Po přechodu přesunout fokus na nadpis nové obrazovky - klávesový
   // uživatel a screen reader jinak "ztratí půdu pod nohama".

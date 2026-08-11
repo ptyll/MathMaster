@@ -253,6 +253,36 @@ test('mapa dostane víc místa než ostatní obrazovky - jinak se vejde jen pět
   }
 });
 
+test('TDD-MAP-002-M: obrazovka se staví až připojená, jinak je posun mapy no-op', () => {
+  // js/main.js stavěl obrazovku do odpojené sekce a připojoval ji až potom.
+  // V prohlížeči tím pádem scrollIntoView v mapScreen nic neudělal (odpojený
+  // podstrom nemá rozložení) a hráč s dohraným Coruscantem neviděl Bespin.
+  // Test jde přes stejnou cestu jako hra, ne přes připojený kontejner.
+  const detached = document.createElement('section');
+  const screen = createMapScreen(detached, {
+    state: stateWithCompleted(['coruscant']),
+    onStartMission: () => {},
+  });
+  const bespin = screen.element.querySelectorAll('.planet-card')[
+    PLANETS.findIndex((p) => p.id === 'bespin')
+  ];
+  assert.equal(
+    bespin.scrolledIntoView,
+    undefined,
+    'v odpojeném podstromu prohlížeč neposouvá - stub to musí modelovat stejně'
+  );
+
+  // A hlavně: main.js musí sekci připojit dřív, než do ní obrazovku postaví.
+  const main = readFileSync(new URL('../js/main.js', import.meta.url), 'utf8');
+  const pripojeni = main.indexOf('app.appendChild(el)');
+  const stavba = main.indexOf('createMapScreen(el');
+  assert.ok(pripojeni > -1 && stavba > -1, 'render() v main.js změnil tvar');
+  assert.ok(
+    pripojeni < stavba,
+    'main.js staví obrazovku do odpojené sekce - posun mapy bude zase mrtvý kód'
+  );
+});
+
 test('TDD-MAP-002-K: šipka, která zmizí pod fokusem, ho předá dál', () => {
   // Hráč doroloval klávesnicí na konec: šipka doprava zmizí, ale fokus na ní
   // pořád stojí. Bez předání by spadl na <body> a tabovalo by se od začátku.

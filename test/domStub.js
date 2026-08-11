@@ -57,11 +57,26 @@ class StubElement {
     };
   }
 
+  /** Je prvek zavěšený pod document.body? Odpojený podstrom nemá rozložení. */
+  get isConnected() {
+    let node = this;
+    while (node.parentNode) {
+      node = node.parentNode;
+    }
+    return node === currentDocument?.body;
+  }
+
   /**
    * Rozložení stub neumí, takže posun jen zaznamená - testu stačí vědět,
    * na KTERÝ prvek se hra posunula (mapa scrolluje na rozehranou planetu).
+   * Na ODPOJENÉM prvku ale posun zahodíme: prohlížeč tam nemá layout box a
+   * scrollIntoView je podle specifikace no-op. Kdyby stub zaznamenával i
+   * tenhle případ, test by zeleně kryl mapu, která se ve hře neposune.
    */
   scrollIntoView(options = {}) {
+    if (!this.isConnected) {
+      return;
+    }
     this.scrolledIntoView = options;
   }
 
@@ -244,7 +259,13 @@ export function installDom() {
   return document;
 }
 
-/** Prvek mimo strom obrazovky - obvyklý kontejner pro render v testu. */
+/**
+ * Kontejner pro render v testu. Zavěšený pod document.body, protože hra běží
+ * v dokumentu - obrazovka renderovaná do odpojeného uzlu se chová jinak
+ * (scrollIntoView je no-op) a test by kryl vadu, kterou hráč vidí.
+ */
 export function createContainer() {
-  return new StubElement('div');
+  const container = new StubElement('div');
+  currentDocument.body.appendChild(container);
+  return container;
 }

@@ -110,8 +110,16 @@ export function cloneExpr(e) {
   return clone;
 }
 
-/** Formátuje výraz: '3x + 4', 'x', '-x', '(2/3)x - 1/2', '5', '2(x + 10)'. */
+/**
+ * Formátuje výraz: '3x + 4', 'x', '-x', '(2/3)x - 1/2', '5', '2(x + 10)'.
+ * Strana s nesčtenými členy (terms, UCN-STEP-003) se vykreslí ČLEN PO ČLENU
+ * (DEC-013): krokový režim smí ukazovat jen to, co hráč skutečně napsal -
+ * render ze součtů x/c by byl tichá kanonizace v didaktické ploše.
+ */
 export function formatExpr(e) {
+  if (Array.isArray(e.terms)) {
+    return formatTerms(e.terms);
+  }
   if (isFactored(e)) {
     return `${formatNumber(factorOf(e))}(${formatPlain(e)})`;
   }

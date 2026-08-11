@@ -167,7 +167,9 @@ test('UCN-STEP-003-T7: pořadí kroků se nevynucuje - hráč může nejdřív j
   assert.notEqual(res.status, 'invalid');
   assert.notEqual(res.status, 'noProgress', 'odečtení konstanty před sečtením je korektní cesta');
   s.submitValue({ kind: 'int', value: 12 });
-  assert.equal(s.equationText, '3x = 12');
+  // DEC-013: didaktická plocha vykresluje nesčtené členy, ne jejich součet -
+  // odečtená 3 se připsala jako další člen a hráč vidí přesně svůj zápis.
+  assert.equal(s.equationText, '2x + 3 + x - 3 = 12');
   assert.deepEqual(s.combinableSides, ['left'], 'členy zůstávají nesčtené, dokud si hráč nezvolí combine');
 
   // odečtená konstanta se připsala jako další člen - combine sečte vše najednou

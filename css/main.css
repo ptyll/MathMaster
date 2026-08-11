@@ -1649,3 +1649,131 @@ p {
 .tile-boxes.is-shaking {
   animation: avatar-shake 0.5s ease;
 }
+
+
+/* --- Volný zápis rovnice na rozšířené klávesnici (UCV-INPUT-004) --- */
+.free-eq {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1rem;
+  width: 100%;
+  max-width: 640px;
+}
+
+.free-eq-problem {
+  font-size: 1.2rem;
+  color: var(--color-text);
+  max-width: 52ch;
+  margin: 0 auto;
+}
+
+/* Jednořádkové vstupní pole se sestavenou rovnicí velkým písmem.
+   Dlouhá rovnice roluje vodorovně, nikdy se nezmenšuje. */
+.free-eq-display {
+  margin: 0;
+  min-height: calc(var(--touch-target) + 16px);
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  font-size: 1.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  background: var(--color-bg-panel);
+  border: 3px solid transparent;
+  border-radius: var(--radius);
+}
+
+.free-eq-display.is-empty {
+  color: var(--color-text-dim);
+  font-size: 1.2rem;
+  font-weight: 400;
+}
+
+/* Zvýraznění po špatné validaci - zápis zůstává k opravě */
+.free-eq-display.is-wrong {
+  border-color: #ffb4a2;
+}
+
+/* Klávesy: min. dotykový cíl 56 px, nezmenšují se */
+.free-eq-key {
+  flex: 0 0 auto;
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-family: inherit;
+  background: #232b57;
+  color: var(--color-text);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.free-eq-key:hover,
+.free-eq-key:focus-visible {
+  background: var(--color-accent);
+  color: #06122b;
+}
+
+.free-eq-key:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.free-eq-keypad {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.free-eq-keypad-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.free-eq-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+/* Nápis u zablokovaného Hotovo ('Rovnice musí obsahovat x') */
+.free-eq-submit-hint {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-dim);
+}
+
+.free-eq-submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Zpětná vazba pod vstupním polem, u místa kde hráč píše */
+.free-eq-feedback {
+  margin: 0;
+  min-height: 1.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.free-eq-feedback.is-wrong {
+  color: #ffb4a2;
+}
+
+.free-eq-feedback.is-good {
+  color: #8ee6a0;
+}
+
+/* Zatřesení po špatné validaci (klíčové snímky sdílí s avatarem) */
+.free-eq-display.is-shaking {
+  animation: avatar-shake 0.5s ease;
+}

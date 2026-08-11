@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createSaveStore, SAVE_KEY, BACKUP_KEY } from '../js/engine/save.js';
-import { createDefaultState, SCHEMA_VERSION } from '../js/engine/state.js';
+import { createDefaultState, migrate, SCHEMA_VERSION } from '../js/engine/state.js';
 
 /** In-memory storage se stejným rozhraním jako localStorage. */
 function memoryStorage() {
@@ -75,6 +75,85 @@ test('load() odmítne strukturálně poškozená data s platnou verzí', () => {
   assert.equal(storage.getItem(SAVE_KEY), null);
 });
 
+/**
+ * Uloží stav poškozený zadanou mutací a vrátí storage, store a původní JSON.
+ * Pomocník pro regresní testy poškozeného perTopic (viz níže).
+ */
+function poskozenySave(poskod) {
+  const state = createDefaultState();
+  poskod(state);
+  const raw = JSON.stringify(state);
+  const storage = memoryStorage();
+  storage.setItem(SAVE_KEY, raw);
+  return { storage, store: createSaveStore(storage), raw };
+}
+
+/**
+ * Regrese: doplňování chybějících témat běží pro každou verzi save, takže
+ * poškozený perTopic vyhazoval TypeError. load() se volá na úrovni modulu
+ * v main.js - výjimka by shodila start celé hry a hráč by se nedostal ani
+ * k resetu. Kontrakt load() říká: zálohovat a vrátit null.
+ */
+test('load() nespadne na perTopic = null, jen zálohuje a vrátí null', () => {
+  const { storage, store, raw } = poskozenySave((s) => { s.stats.perTopic = null; });
+
+  assert.equal(store.load(), null);
+  assert.equal(storage.getItem(BACKUP_KEY), raw);
+  assert.equal(storage.getItem(SAVE_KEY), null);
+});
+
+test('load() nespadne na téma uložené jako číslo', () => {
+  const { storage, store, raw } = poskozenySave((s) => { s.stats.perTopic.wordProblems = 5; });
+
+  assert.equal(store.load(), null);
+  assert.equal(storage.getItem(BACKUP_KEY), raw);
+  assert.equal(storage.getItem(SAVE_KEY), null);
+});
+
+test('load() nespadne na téma uložené jako řetězec', () => {
+  const { storage, store, raw } = poskozenySave((s) => { s.stats.perTopic.equations = 'nesmysl'; });
+
+  assert.equal(store.load(), null);
+  assert.equal(storage.getItem(BACKUP_KEY), raw);
+  assert.equal(storage.getItem(SAVE_KEY), null);
+});
+
+test('load() odmítne perTopic jako pole (doplněné klíče by se tiše ztratily)', () => {
+  // Do pole by šla témata uložit jako vlastnosti, ale JSON.stringify je při
+  // dalším uložení zahodí - raději hned záloha než tichá ztráta statistik.
+  const { storage, store, raw } = poskozenySave((s) => { s.stats.perTopic = []; });
+
+  assert.equal(store.load(), null);
+  assert.equal(storage.getItem(BACKUP_KEY), raw);
+  assert.equal(storage.getItem(SAVE_KEY), null);
+});
+
+test('migrate() na poškozeném perTopic vrátí null místo výjimky', () => {
+  const poskozeneTvary = [null, [], 'nesmysl', 42];
+  for (const perTopic of poskozeneTvary) {
+    const state = createDefaultState();
+    state.stats.perTopic = perTopic;
+    assert.equal(migrate(state), null, `perTopic = ${JSON.stringify(perTopic)}`);
+  }
+});
+
+test('load() spraví téma s rozbitým errors/lastErrors a zachová počty', () => {
+  // Tady se postup zahazovat nemusí - téma je objekt, jen jeho vnitřní pole
+  // mají špatný typ. Nahradíme je prázdnými a hráči zůstanou vyřešené příklady.
+  const { store } = poskozenySave((s) => {
+    s.stats.perTopic.equations = { solved: 12, attempts: 20, errors: 'nesmysl', lastErrors: 7 };
+  });
+
+  const loaded = store.load();
+  assert.notEqual(loaded, null);
+  assert.deepEqual(loaded.stats.perTopic.equations, {
+    solved: 12,
+    attempts: 20,
+    errors: {},
+    lastErrors: [],
+  });
+});
+
 test('save() při padajícím setItem vrátí false a hra nespadne', () => {
   const brokenStorage = {
     getItem: () => null,
@@ -116,6 +195,12 @@ test('výchozí stav má kompletní strukturu dle datového modelu', () => {
   assert.ok(state.stats.perTopic.equations);
   assert.ok(state.stats.perTopic.fractions);
   assert.ok(state.stats.perTopic.fractionEquations);
+  assert.deepEqual(state.stats.perTopic.wordProblems, {
+    solved: 0,
+    attempts: 0,
+    lastErrors: [],
+    errors: {},
+  });
   assert.equal(state.settings.sound, true);
   assert.equal(state.settings.hintsLevel, 'full');
 });

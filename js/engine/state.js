@@ -10,6 +10,12 @@ function emptyTopicStats() {
   return { solved: 0, attempts: 0, lastErrors: [], errors: {} };
 }
 
+/**
+ * Všechna témata, která mají mít záznam v perTopic. Rodičovský přehled
+ * (UCV-STATS-001) je vykresluje v tomto pořadí.
+ */
+const KNOWN_TOPICS = ['equations', 'fractions', 'fractionEquations', 'wordProblems'];
+
 /** Vytvoří výchozí herní stav pro nového hráče. */
 export function createDefaultState() {
   return {
@@ -30,6 +36,7 @@ export function createDefaultState() {
         equations: emptyTopicStats(),
         fractions: emptyTopicStats(),
         fractionEquations: emptyTopicStats(),
+        wordProblems: emptyTopicStats(),
       },
     },
     settings: {
@@ -61,6 +68,7 @@ export function migrate(data) {
   if (data.version === 1) {
     data = migrateV1toV2(data);
   }
+  fillMissingTopics(data);
   return data;
 }
 
@@ -73,13 +81,40 @@ function migrateV1toV2(data) {
   const stats = data.stats;
   stats.missionsCompleted ??= 0;
   stats.totalTimeMs ??= 0;
-  for (const topic of ['equations', 'fractions', 'fractionEquations']) {
-    stats.perTopic[topic] ??= emptyTopicStats();
-    stats.perTopic[topic].errors ??= {};
-    stats.perTopic[topic].lastErrors ??= [];
-  }
   data.version = 2;
   return data;
+}
+
+/**
+ * Doplní chybějící témata v perTopic nulami. Starý save v2 bez klíče
+ * wordProblems (před fází slovních úloh) by jinak neměl v přehledu
+ * téma 'Slovní úlohy' a progress/stats kód by musel klíč ošetřovat všude.
+ *
+ * Volá se až po isValidShape(), takže perTopic i každé téma v něm jsou
+ * jistě objekty. Vnitřní pole tématu (errors, lastErrors) dorovnáváme
+ * i když mají špatný typ - kvůli jednomu rozbitému poli nemá smysl
+ * zahodit hráči celý postup, stačí ho nahradit prázdnou hodnotou.
+ */
+function fillMissingTopics(data) {
+  const perTopic = data.stats.perTopic;
+  for (const topic of KNOWN_TOPICS) {
+    perTopic[topic] ??= emptyTopicStats();
+  }
+  // Projíždíme i neznámá témata (save z novější verze po downgradu),
+  // aby stats/progress kód nikde nenarazil na cizí typ.
+  for (const topicStats of Object.values(perTopic)) {
+    if (!isPlainObject(topicStats.errors)) {
+      topicStats.errors = {};
+    }
+    if (!Array.isArray(topicStats.lastErrors)) {
+      topicStats.lastErrors = [];
+    }
+  }
+}
+
+/** Objekt se skutečnými klíči - tedy ne null a ne pole. */
+function isPlainObject(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -87,22 +122,30 @@ function migrateV1toV2(data) {
  * pořád nést poškozený obsah (špatné typy), který by hru shodil za běhu.
  */
 function isValidShape(data) {
-  if (data.profile !== null && (typeof data.profile !== 'object' || Array.isArray(data.profile))) {
+  if (data.profile !== null && !isPlainObject(data.profile)) {
     return false;
   }
   if (!Array.isArray(data.planets)) {
     return false;
   }
-  if (typeof data.inventory !== 'object' || data.inventory === null) {
+  if (!isPlainObject(data.inventory)) {
     return false;
   }
   if (!Array.isArray(data.inventory.crystals) || !Array.isArray(data.inventory.shipParts)) {
     return false;
   }
-  if (typeof data.stats !== 'object' || data.stats === null || typeof data.stats.perTopic !== 'object') {
+  // perTopic musí být opravdová mapa témat: typeof null i typeof [] je taky
+  // 'object', ale doplňování témat by nad null spadlo (TypeError) a nad polem
+  // by se doplněné klíče při dalším JSON.stringify tiše ztratily.
+  if (!isPlainObject(data.stats) || !isPlainObject(data.stats.perTopic)) {
     return false;
   }
-  if (typeof data.settings !== 'object' || data.settings === null) {
+  // Téma jako číslo nebo řetězec by při dorovnávání polí shodilo migraci -
+  // ve strict módu je zápis vlastnosti na primitiv TypeError.
+  if (!Object.values(data.stats.perTopic).every(isPlainObject)) {
+    return false;
+  }
+  if (!isPlainObject(data.settings)) {
     return false;
   }
   return true;

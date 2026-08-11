@@ -68,6 +68,38 @@ test('migrace v1 -> v2 doplní nová pole a nesmaže postup', () => {
   assert.equal(migrated.stats.totalSolved, 30);
 });
 
+test('migrace v1 doplní i téma wordProblems nulami', () => {
+  const migrated = migrate(legacyV1State());
+  assert.deepEqual(migrated.stats.perTopic.wordProblems, {
+    solved: 0,
+    attempts: 0,
+    lastErrors: [],
+    errors: {},
+  });
+});
+
+test('save v2 bez klíče wordProblems se při načtení doplní nulami', () => {
+  // Save uložený mezi nasazením slovních úloh a této fáze - verze 2,
+  // ale perTopic ještě nezná wordProblems (UCN-STATS-002).
+  const state = createDefaultState();
+  delete state.stats.perTopic.wordProblems;
+  state.stats.totalSolved = 7;
+  const storage = memoryStorage();
+  storage.setItem('mathmaster-save-v1', JSON.stringify(state));
+
+  const loaded = createSaveStore(storage).load();
+  assert.notEqual(loaded, null);
+  assert.deepEqual(loaded.stats.perTopic.wordProblems, {
+    solved: 0,
+    attempts: 0,
+    lastErrors: [],
+    errors: {},
+  });
+  // zbytek statistik zůstal nedotčený
+  assert.equal(loaded.stats.totalSolved, 7);
+  assert.equal(loaded.version, 2);
+});
+
 test('starý save projde přes save modul a uloží se už jako v2', () => {
   const storage = memoryStorage();
   storage.setItem('mathmaster-save-v1', JSON.stringify(legacyV1State()));
@@ -130,6 +162,29 @@ test('mise bez pole errors nespadne (starší volání)', () => {
   });
   assert.deepEqual(state.stats.perTopic.equations.errors, {});
   assert.equal(state.stats.totalTimeMs, 0);
+});
+
+test('mise slovních úloh zapisuje do tématu wordProblems včetně equationSetup', () => {
+  const state = createDefaultState();
+  applyMissionResult(state, {
+    missionId: 'mustafar-1',
+    planetId: 'mustafar',
+    crystalColor: 'červený',
+    topic: 'wordProblems',
+    topics: ['wordProblems'],
+    stars: 1,
+    mistakes: 2,
+    solved: 4,
+    total: 6,
+    hintsUsed: 0,
+    errors: { equationSetup: 2, arithmetic: 1 },
+    durationMs: 60000,
+  });
+
+  const topic = state.stats.perTopic.wordProblems;
+  assert.equal(topic.solved, 4);
+  assert.equal(topic.attempts, 6);
+  assert.deepEqual(topic.errors, { equationSetup: 2, arithmetic: 1 });
 });
 
 /* --- mise sbírá druhy chyb --- */
@@ -236,6 +291,53 @@ test('každý druh chyby má popisek i radu', () => {
   }
   // neznámý kód nespadne
   assert.equal(describeError('nesmysl').label, 'nesmysl');
+});
+
+/* --- slovní úlohy v rodičovském přehledu (UCN-STATS-002) --- */
+
+test('přehled obsahuje téma wordProblems s českým popiskem', () => {
+  const summary = summarizeStats(createDefaultState());
+  const wordProblems = summary.topics.find((t) => t.key === 'wordProblems');
+  assert.ok(wordProblems);
+  assert.equal(wordProblems.label, 'Slovní úlohy');
+  // nehrané téma = null úspěšnost, ne falešných 0 %
+  assert.equal(wordProblems.successRate, null);
+});
+
+test('equationSetup má český popisek a radu pro rodiče', () => {
+  const info = describeError('equationSetup');
+  assert.equal(info.label, 'Sestavení rovnice ze zadání');
+  assert.ok(info.advice.length > 0);
+  assert.notEqual(info.label, 'equationSetup');
+});
+
+test('rodičovský přehled ukáže equationSetup česky s počtem', () => {
+  const state = createDefaultState();
+  state.stats.totalAttempts = 40;
+  state.stats.totalSolved = 20;
+  state.stats.perTopic.wordProblems = {
+    solved: 8,
+    attempts: 20,
+    errors: { equationSetup: 5, arithmetic: 2 },
+  };
+  state.stats.perTopic.equations = { solved: 12, attempts: 20, errors: {} };
+
+  const summary = summarizeStats(state);
+  assert.equal(summary.topErrors[0].kind, 'equationSetup');
+  assert.equal(summary.topErrors[0].count, 5);
+  assert.equal(summary.topErrors[0].label, 'Sestavení rovnice ze zadání');
+  assert.ok(summary.topErrors[0].advice.length > 0);
+  // doporučení cituje český popisek, ne kód druhu chyby
+  assert.match(summary.recommendations.join(' '), /sestavení rovnice ze zadání/i);
+});
+
+test('mise s nulou chyb -> žádné chyby v přehledu jako dnes', () => {
+  const state = createDefaultState();
+  state.stats.totalAttempts = 40;
+  state.stats.totalSolved = 40;
+  state.stats.perTopic.equations = { solved: 40, attempts: 40, errors: {} };
+  const summary = summarizeStats(state);
+  assert.deepEqual(summary.topErrors, []);
 });
 
 test('formatDuration mluví česky a v rozumných jednotkách', () => {

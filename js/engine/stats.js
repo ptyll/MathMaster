@@ -13,6 +13,7 @@ export const TOPIC_LABELS = Object.freeze({
   equations: 'Rovnice',
   fractions: 'Zlomky',
   fractionEquations: 'Rovnice se zlomky',
+  wordProblems: 'Slovní úlohy',
 });
 
 /**

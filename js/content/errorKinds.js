@@ -57,7 +57,7 @@ const CATALOG = {
     advice: 'Přeskakované příklady bývají nad aktuální úrovní - zkuste s ním projít jeden společně.',
   },
   [ERROR_KINDS.EQUATION_SETUP]: {
-    label: 'Rovnice nesedí na zadání',
+    label: 'Sestavení rovnice ze zadání',
     hint: 'Počítá dobře, ale ze slovního zadání sestaví špatnou rovnici.',
     advice: 'Procvičte překlad zadání na rovnici: co je neznámá x a co se s ní postupně děje, krok za krokem.',
   },

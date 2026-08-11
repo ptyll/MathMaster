@@ -57,7 +57,17 @@ export function createSaveStore(storage) {
         // Novější verze než umíme - data necháváme být, hra startuje bez nich.
         return null;
       }
-      const migrated = migrate(parsed);
+      let migrated;
+      try {
+        migrated = migrate(parsed);
+      } catch {
+        // Pojistka ke kontraktu výše: load() se volá na úrovni modulu při
+        // startu hry (main.js), takže výjimka z migrace by znamenala, že se
+        // hra vůbec nevykreslí a hráč se nedostane ani k resetu. Žádná
+        // budoucí migrace to nesmí způsobit - poškozená data proto řešíme
+        // stejně jako nevalidní JSON: zálohovat a začít s novým profilem.
+        migrated = null;
+      }
       if (migrated === null) {
         backupCorrupted(storage, raw);
         return null;

@@ -6,6 +6,13 @@
  * Lineární rovnice je reprezentovaná dvěma výrazy:
  *   { x: {n,d}, c: {n,d} }  ...  (koeficient u x) * x + (konstanta)
  * tedy např. 3x + 4 = expr(3, 4).
+ *
+ * Strana může nést i NESČTENOU podobu (UCN-STEP-003): volitelný seznam
+ * `terms` - top-level členy { x, c }, např. x − x/2 − x/4. Invariant:
+ * x a c jsou vždy součet členů (kanonický tvar slouží jako validační
+ * reference i jako stav po operaci combine, DEC-012); terms je jen
+ * didaktický pohled před sečtením. Sečíst členy musí hráč zvolit sám -
+ * žádná tichá kanonizace (DEC-010).
  */
 
 import {
@@ -32,6 +39,41 @@ export function expr(xN, xD, cN, cD) {
 /** Součinový tvar k(x + b) - závorka, kterou lze roznásobit nebo vydělit. */
 export function factoredExpr(kN, kD, xN, xD, cN, cD) {
   return { f: makeFraction(kN, kD), x: makeFraction(xN, xD), c: makeFraction(cN, cD) };
+}
+
+/* --- Nesčtená (multi-term) reprezentace strany (UCN-STEP-003) --------------- */
+
+/** Hluboká kopie jednoho členu { x, c }. */
+export const cloneTerm = (t) => ({ x: { ...t.x }, c: { ...t.c } });
+
+/**
+ * Strana s nesčtenými členy: terms = seznam top-level členů { x, c }.
+ * x a c se dopočítou jako součet členů - drží se invariant, že kanonický
+ * tvar je vždy k dispozici i před sečtením.
+ */
+export function multiTermSide(terms) {
+  const x = terms.reduce((sum, t) => addFractions(sum, t.x), makeFraction(0));
+  const c = terms.reduce((sum, t) => addFractions(sum, t.c), makeFraction(0));
+  return { f: { ...ONE }, x, c, terms: terms.map(cloneTerm) };
+}
+
+/**
+ * Dává na straně smysl operace 'sečíst stejné členy'?
+ * Jen když má dva a víc x-členů nebo dvě a víc konstant - jinak by
+ * byla prázdnou volbou (strana už je ve standardním tvaru ax + b).
+ */
+export function needsCombine(e) {
+  if (!e || !Array.isArray(e.terms)) {
+    return false;
+  }
+  const xTerms = e.terms.filter((t) => t.x.n !== 0).length;
+  const constTerms = e.terms.filter((t) => t.c.n !== 0).length;
+  return xTerms >= 2 || constTerms >= 2;
+}
+
+/** Sečtená podoba strany: standardní tvar ax + b, seznam členů zmizí. */
+export function combineSide(e) {
+  return { f: { ...ONE }, x: { ...e.x }, c: { ...e.c } };
 }
 
 /** Činitel před závorkou (1, když závorka není). */
@@ -61,7 +103,11 @@ export function expandExpr(e) {
 
 /** Hluboká kopie výrazu - kroky nesou snímky stavu, ne živé odkazy. */
 export function cloneExpr(e) {
-  return { f: { ...factorOf(e) }, x: { ...e.x }, c: { ...e.c } };
+  const clone = { f: { ...factorOf(e) }, x: { ...e.x }, c: { ...e.c } };
+  if (Array.isArray(e.terms)) {
+    clone.terms = e.terms.map(cloneTerm);
+  }
+  return clone;
 }
 
 /** Formátuje výraz: '3x + 4', 'x', '-x', '(2/3)x - 1/2', '5', '2(x + 10)'. */
@@ -106,6 +152,30 @@ function formatPlain(e) {
 
   const cText = formatNumber({ n: Math.abs(e.c.n), d: e.c.d });
   return e.c.n > 0 ? `${signedX} + ${cText}` : `${signedX} - ${cText}`;
+}
+
+/**
+ * Formátuje nesčtenou stranu z jejích členů: 'x - x/2 - x/4', '2x + 3 + x'.
+ * Člen, který nese x-člen i konstantu (např. roznásobená závorka ze vstupu),
+ * se pro čitelnost uzavorkuje.
+ */
+export function formatTerms(terms) {
+  let text = '';
+  for (const t of terms) {
+    const negative = t.x.n !== 0 ? t.x.n < 0 : t.c.n < 0;
+    const magnitude = {
+      x: makeFraction(Math.abs(t.x.n), t.x.d),
+      c: makeFraction(Math.abs(t.c.n), t.c.d),
+    };
+    const body =
+      t.x.n !== 0 && t.c.n !== 0 ? `(${formatPlain(magnitude)})` : formatPlain(magnitude);
+    if (!text) {
+      text = negative ? `-${body}` : body;
+    } else {
+      text += negative ? ` - ${body}` : ` + ${body}`;
+    }
+  }
+  return text || '0';
 }
 
 /** Dosadí hodnotu za x a vrátí hodnotu výrazu jako zlomek. */

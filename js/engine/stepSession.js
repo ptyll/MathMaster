@@ -23,7 +23,7 @@ import {
   describeOperation,
   cloneState,
 } from '../content/stepCheck.js';
-import { formatExpr, isFactored } from '../content/solver.js';
+import { formatExpr, isFactored, needsCombine } from '../content/solver.js';
 import {
   makeFraction,
   fractionsEqual,
@@ -124,6 +124,10 @@ function createEquationSession(exercise) {
     get hasBracket() {
       return isFactored(state.left) || isFactored(state.right);
     },
+    /** Strany s nesčtenými členy, kde má sečtení smysl. UI podle toho nabídne 'combine'. */
+    get combinableSides() {
+      return ['left', 'right'].filter((side) => needsCombine(state[side]));
+    },
     get question() {
       if (!pending || pending.slotIndex >= pending.slots.length) {
         return null;
@@ -188,7 +192,9 @@ function createEquationSession(exercise) {
       }
 
       noProgressStreak = 0;
-      const slots = askedParts(state, applied.next);
+      // Operace 'combine' nese vlastní sloty (dopočet sečteného koeficientu);
+      // ostatní operace se ptají na hodnoty, které se krokem změnily.
+      const slots = applied.slots ?? askedParts(state, applied.next);
       pending = { operation, next: applied.next, slots, slotIndex: 0 };
       if (slots.length === 0) {
         // Čistě mechanický krok (např. x/3 = 5 -> x = 15 nemá co počítat).

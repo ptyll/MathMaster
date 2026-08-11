@@ -31,7 +31,10 @@ export function makeFraction(n, d = 1) {
     d = -d;
   }
   const g = gcd(n, d) || 1;
-  return { n: n / g, d: d / g };
+  const reduced = n / g;
+  // -0 není platný čitatel: deepStrictEqual ho rozlišuje od 0 a '-0' by
+  // se mohlo objevit i ve formátovaném výstupu.
+  return { n: reduced === 0 ? 0 : reduced, d: d / g };
 }
 
 export function addFractions(a, b) {

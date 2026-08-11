@@ -29,6 +29,11 @@
  *
  * Kanonický výstup má tvar solverovského výrazu { f, x, c } s f = 1, takže
  * z něj krokový režim může přímo startovat (DEC-011: z HRÁČOVY rovnice).
+ *
+ * DEC-012: vedle canonical vystavuje parseEquation i `multiTerm` - nesčtenou
+ * reprezentaci stran (seznam top-level členů), když má na některé straně
+ * sečtení smysl (x − x/2 − x/4). Kroková relace startuje z ní; canonical
+ * zůstává validační referencí a zároveň stavem po operaci combine.
  */
 
 import {
@@ -39,7 +44,7 @@ import {
   divideFractions,
   fractionsEqual,
 } from './fractions.js';
-import { effectiveX, effectiveC } from './solver.js';
+import { effectiveX, effectiveC, multiTermSide, needsCombine } from './solver.js';
 
 /** Druh chyby pro rodičovský přehled (UCN-STATS-002): rovnice nesedí na zadání. */
 export const EQUATION_SETUP_ERROR = 'equationSetup';
@@ -152,7 +157,9 @@ function validateToken(t) {
 // Gramatika:  expr := term (('+'|'-') term)*
 //             term := factor (('*'|'/'|implicitně) factor)*
 //             factor := num | x | '(' expr ')' | ('+'|'-') factor
-// Vrací lineární tvar { x, c } nebo hází ParseError s českou nápovědou.
+// parseExpr vrací { value, terms }: value je sečtený lineární tvar { x, c },
+// terms jsou top-level členy PŘED sečtením (se znaménkem) - z nich se staví
+// multi-term reprezentace pro krokový režim (DEC-012, UCN-STEP-003).
 
 function parseSide(tokens) {
   let pos = 0;
@@ -162,13 +169,18 @@ function parseSide(tokens) {
   const startsFactor = (t) => t && (t.kind === 'num' || t.kind === 'x' || t.kind === 'lparen');
 
   function parseExpr() {
-    let value = parseTerm();
+    const first = parseTerm();
+    const terms = [first];
+    let value = first;
     while (isOp(peek(), '+', '-')) {
       const op = tokens[pos++].op;
       const rhs = parseTerm();
+      // Členy se ukládají se znaménkem - multi-term pohled pak ukáže
+      // přesně to, co hráč napsal (x − x/4, ne x + (−x/4)).
+      terms.push(op === '+' ? rhs : negateLinear(rhs));
       value = op === '+' ? addLinear(value, rhs) : subLinear(value, rhs);
     }
-    return value;
+    return { value, terms };
   }
 
   function parseTerm() {
@@ -216,17 +228,19 @@ function parseSide(tokens) {
         throw new ParseError(NOTE_UNCLOSED_PAREN);
       }
       pos++;
-      return inner;
+      // Závorka je jeden činitel - top-level členy celé strany jsou venku,
+      // uvnitř závorky se členy sčítají jako dosud.
+      return inner.value;
     }
     // rparen nebo eq na místě, kde čekáme činitel - zápis je nedopsaný.
     throw new ParseError(NOTE_INCOMPLETE);
   }
 
-  const value = parseExpr();
+  const { value, terms } = parseExpr();
   if (pos !== tokens.length) {
     throw new ParseError(NOTE_INCOMPLETE);
   }
-  return value;
+  return { value, terms };
 }
 
 // --- Kanonizace --------------------------------------------------------------
@@ -259,10 +273,12 @@ function canonicalEquation(equation) {
  *
  * @param {object[]} tokens seznam tokenů dle hlavičky souboru
  * @param {{left: object, right: object}} [expected] očekávaná rovnice (UCN-MATH-007)
- * @returns {{status: 'ok'|'match'|'mismatch'|'unparseable', canonical: {left, right}|null, note: string|null, errorKind?: string}}
+ * @returns {{status: 'ok'|'match'|'mismatch'|'unparseable', canonical: {left, right}|null, multiTerm?: {left, right}|null, note: string|null, errorKind?: string}}
  *   Bez expected: 'ok' nebo 'unparseable'. S expected: 'match' (note jen u
  *   násobku jednoduššího tvaru), 'mismatch' (errorKind equationSetup) nebo
  *   'unparseable' (nápověda, ne chyba do statistik).
+ *   multiTerm (DEC-012): nesčtená reprezentace stran pro start krokového
+ *   režimu, nebo null, když není co sčítat. U 'unparseable' chybí.
  */
 export function parseEquation(tokens, expected = null) {
   if (!Array.isArray(tokens) || tokens.length === 0) {
@@ -311,17 +327,45 @@ export function parseEquation(tokens, expected = null) {
 
   // Rovnice bez neznámé (samotné číslo, 3 + 5 = 8) je nedopsaná, ne špatná.
   // Psané x, které se vynulovalo (x − x = 0), dostane přesnější hlášku.
-  if (left.x.n === 0 && right.x.n === 0) {
+  if (left.value.x.n === 0 && right.value.x.n === 0) {
     const wroteX = tokens.some((t) => t.kind === 'x');
     return unparseable(wroteX ? NOTE_X_CANCELLED : NOTE_NO_X);
   }
 
-  const canonical = { left: canonicalize(left), right: canonicalize(right) };
+  const canonical = { left: canonicalize(left.value), right: canonicalize(right.value) };
+  // DEC-012: vedle canonical (validační reference = stav po sečtení) vystavíme
+  // i nesčtenou multi-term reprezentaci stran, ze které krokový režim startuje.
+  const multiTerm = buildMultiTerm(canonical, left.terms, right.terms);
   if (!expected) {
-    return { status: 'ok', canonical, note: null };
+    return { status: 'ok', canonical, multiTerm, note: null };
   }
   const verdict = equationsMatch(canonical, expected);
-  return { ...verdict, canonical };
+  return { ...verdict, canonical, multiTerm };
+}
+
+/**
+ * Sestaví multi-term reprezentaci rovnice pro krokový režim (UCN-STEP-003).
+ * Strana, na které má sečtení smysl (2+ x-členů nebo 2+ konstant), dostane
+ * seznam členů; ostatní strany zůstávají v kanonickém tvaru. Když není
+ * co sčítat, vrací null - krokový režim startuje rovnou z canonical.
+ */
+function buildMultiTerm(canonical, leftTerms, rightTerms) {
+  // multiTermSide dopočítá x a c jako součet členů - vyjde stejně jako
+  // canonical (oba jsou zkrácené zlomky), takže canonical zůstává zároveň
+  // stavem po operaci combine.
+  const buildSide = (terms) => {
+    const side = multiTermSide(terms);
+    return needsCombine(side) ? side : null;
+  };
+  const left = buildSide(leftTerms);
+  const right = buildSide(rightTerms);
+  if (!left && !right) {
+    return null;
+  }
+  return {
+    left: left ?? canonical.left,
+    right: right ?? canonical.right,
+  };
 }
 
 /**

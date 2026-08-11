@@ -4,6 +4,9 @@
  *
  * Stav rovnice je { left, right }, kde každá strana je výraz
  * { x: {n,d}, c: {n,d} } ze solveru (koeficient u x + konstanta).
+ * Strana může nést i nesčtené členy (terms, UCN-STEP-003) - ty sečte
+ * operace 'combine', kterou si hráč musí zvolit sám (žádná tichá
+ * kanonizace, DEC-010).
  *
  * Klíčové pravidlo: pořadí kroků NENÍ vynucené. 3x + 4 = 19 jde
  * legitimně řešit i dělením třemi jako první. Krok se posuzuje
@@ -20,19 +23,24 @@ import {
 } from './fractions.js';
 import {
   cloneExpr,
+  cloneTerm,
   solvedValue,
   factorOf,
   isFactored,
   effectiveX,
   effectiveC,
   expandExpr,
+  needsCombine,
+  combineSide,
 } from './solver.js';
 
 /**
  * Operace, které hráč může zvolit. Násobit/dělit lze jen číslem, ne x-členem.
  * 'expand' roznásobí závorku a operand nemá.
+ * 'combine' sečte stejné členy na JEDNÉ zvolené straně (UCN-STEP-003) -
+ * operand nemá, místo něj nese side: 'left'|'right'.
  */
-export const OPERATION_KINDS = Object.freeze(['add', 'sub', 'mul', 'div', 'expand']);
+export const OPERATION_KINDS = Object.freeze(['add', 'sub', 'mul', 'div', 'expand', 'combine']);
 
 const fractionsIdentical = (a, b) => a.n === b.n && a.d === b.d;
 
@@ -43,12 +51,17 @@ const isBareX = (e) => !isFactored(e) && e.x.n === 1 && e.x.d === 1 && e.c.n ===
 const isUnit = (f) => f.n === 1 && f.d === 1;
 
 /**
- * Aplikuje operaci na OBĚ strany rovnice - jednostranná úprava neexistuje,
- * v tom je celý didaktický smysl (UCV-STEP-001).
+ * Aplikuje operaci na rovnici.
+ * add/sub/mul/div upravují OBĚ strany stejně - jednostranná úprava
+ * neexistuje, v tom je celý didaktický smysl (UCV-STEP-001).
+ * 'combine' je naopak jednostranná: sečte stejné členy jen na zvolené
+ * straně (operation.side), druhá se nemění - rovnost tím neporuší.
  *
  * @param {{left: object, right: object}} state
- * @param {{kind: string, operand: {n,d}, term?: 'const'|'x'}} operation
- * @returns {{status: 'ok'|'invalid', next: object|null, note: string|null}}
+ * @param {{kind: string, operand?: {n,d}, term?: 'const'|'x', side?: 'left'|'right'}} operation
+ * @returns {{status: 'ok'|'invalid', next: object|null, note: string|null, slots?: string[]}}
+ *   'slots' vrací jen 'combine': části, které má hráč dopočítat
+ *   (výsledný koeficient u x a/nebo součet konstant na sečtené straně).
  */
 export function applyOperation(state, operation) {
   const { kind, operand } = operation;
@@ -67,6 +80,49 @@ export function applyOperation(state, operation) {
       next: { left: expandExpr(state.left), right: expandExpr(state.right) },
       note: null,
     };
+  }
+
+  if (kind === 'combine') {
+    const sideName = operation.side;
+    if (sideName !== 'left' && sideName !== 'right') {
+      throw new Error(`Neznámá strana pro sečtení členů: ${sideName}`);
+    }
+    const side = state[sideName];
+    if (!needsCombine(side)) {
+      return {
+        status: 'invalid',
+        next: null,
+        note: 'Na téhle straně není co sčítat - každý druh členu je tu jen jednou.',
+      };
+    }
+
+    const next = {
+      left: sideName === 'left' ? combineSide(side) : cloneExpr(state.left),
+      right: sideName === 'right' ? combineSide(side) : cloneExpr(state.right),
+    };
+
+    // Obranná pojistka: sečtení, po kterém by x zmizelo z obou stran,
+    // vede na tvrzení bez neznámé - to k řešení nepomůže.
+    if (effectiveX(next.left).n === 0 && effectiveX(next.right).n === 0) {
+      return {
+        status: 'invalid',
+        next: null,
+        note: 'Takhle by ti x z rovnice úplně zmizelo - a to hledáme.',
+      };
+    }
+
+    // Dopočet výsledku je didaktická podstata kroku: hráč musí sám říct,
+    // kolik x (a/nebo kolik jednotek) po sečtení zbude - i když je to 0.
+    const xTerms = side.terms.filter((t) => t.x.n !== 0).length;
+    const constTerms = side.terms.filter((t) => t.c.n !== 0).length;
+    const slots = [];
+    if (xTerms >= 2) {
+      slots.push(`${sideName}.x`);
+    }
+    if (constTerms >= 2) {
+      slots.push(`${sideName}.c`);
+    }
+    return { status: 'ok', next, note: null, slots };
   }
 
   // Přičítat a odečítat přes neroznásobenou závorku nejde - k(x+b) + n
@@ -109,27 +165,69 @@ export function applyOperation(state, operation) {
 
   const applyToSide = (side) => {
     const f = factorOf(side);
+    let nextSide;
     switch (kind) {
       case 'add':
-        return term === 'x'
-          ? { f: { ...f }, x: addFractions(side.x, operand), c: { ...side.c } }
-          : { f: { ...f }, x: { ...side.x }, c: addFractions(side.c, operand) };
+        nextSide =
+          term === 'x'
+            ? { f: { ...f }, x: addFractions(side.x, operand), c: { ...side.c } }
+            : { f: { ...f }, x: { ...side.x }, c: addFractions(side.c, operand) };
+        break;
       case 'sub':
-        return term === 'x'
-          ? { f: { ...f }, x: subtractFractions(side.x, operand), c: { ...side.c } }
-          : { f: { ...f }, x: { ...side.x }, c: subtractFractions(side.c, operand) };
+        nextSide =
+          term === 'x'
+            ? { f: { ...f }, x: subtractFractions(side.x, operand), c: { ...side.c } }
+            : { f: { ...f }, x: { ...side.x }, c: subtractFractions(side.c, operand) };
+        break;
       case 'mul':
         // U závorky škálujeme činitele, ne její obsah - dělení činitelem
         // je pak přesně ta úprava, která závorku odstraní.
-        return isFactored(side)
+        nextSide = isFactored(side)
           ? { f: multiplyFractions(f, operand), x: { ...side.x }, c: { ...side.c } }
           : { f: { ...f }, x: multiplyFractions(side.x, operand), c: multiplyFractions(side.c, operand) };
+        break;
       default:
-        return isFactored(side)
+        nextSide = isFactored(side)
           ? { f: divideFractions(f, operand), x: { ...side.x }, c: { ...side.c } }
           : { f: { ...f }, x: divideFractions(side.x, operand), c: divideFractions(side.c, operand) };
     }
+
+    // Strana s nesčtenými členy si je nechává (žádná tichá kanonizace):
+    // násobení/dělení škáluje každý člen, přičtení/odečtení člen přidá.
+    // x a c výše už nesou součet, takže invariant 'x,c = součet členů' platí dál.
+    if (!Array.isArray(side.terms)) {
+      return nextSide;
+    }
+    switch (kind) {
+      case 'add':
+        return { ...nextSide, terms: [...side.terms.map(cloneTerm), appendedTerm(term, operand)] };
+      case 'sub':
+        return {
+          ...nextSide,
+          terms: [...side.terms.map(cloneTerm), appendedTerm(term, { n: -operand.n, d: operand.d })],
+        };
+      case 'mul':
+        return {
+          ...nextSide,
+          terms: side.terms.map((t) => ({
+            x: multiplyFractions(t.x, operand),
+            c: multiplyFractions(t.c, operand),
+          })),
+        };
+      default:
+        return {
+          ...nextSide,
+          terms: side.terms.map((t) => ({
+            x: divideFractions(t.x, operand),
+            c: divideFractions(t.c, operand),
+          })),
+        };
+    }
   };
+
+  /** Člen, který přidává add/sub na stranu s nesčtenými členy. */
+  const appendedTerm = (termKind, value) =>
+    termKind === 'x' ? { x: { ...value }, c: { n: 0, d: 1 } } : { x: { n: 0, d: 1 }, c: { ...value } };
 
   const next = { left: applyToSide(state.left), right: applyToSide(state.right) };
 
@@ -158,6 +256,11 @@ export function progressScore(state) {
   // činitelem ani roznásobení nevyšlo jako pokrok a hra by se zasekla.
   const brackets = (isFactored(state.left) ? 1 : 0) + (isFactored(state.right) ? 1 : 0);
 
+  // Nesčtené členy jsou překážka stejného ražení: sečtení je opravdová
+  // práce (hráč dopočítává koeficient), takže combine musí skóre snížit,
+  // jinak by ho checkStep odmítl jako krok bez pokroku.
+  const uncombined = (needsCombine(state.left) ? 1 : 0) + (needsCombine(state.right) ? 1 : 0);
+
   // Koeficient u x se rozpadá na tři nezávislé překážky: zlomkovost,
   // velikost a znaménko. Kdyby se hodnotilo jen 'je koeficient přesně 1?',
   // splynulo by (2/9)x s 2x i -3x s -x - a hra by odmítala vynásobení
@@ -184,11 +287,18 @@ export function progressScore(state) {
   if (effectiveX(state.right).n !== 0) {
     options.push(sideScore(state.right, state.left));
   }
-  return brackets + (options.length > 0 ? Math.min(...options) : 0);
+  return brackets + uncombined + (options.length > 0 ? Math.min(...options) : 0);
 }
 
-/** Je rovnice vyřešená, tedy ve tvaru x = číslo (nebo číslo = x)? */
+/**
+ * Je rovnice vyřešená, tedy ve tvaru x = číslo (nebo číslo = x)?
+ * Nesčtené členy na cestu do výsledku nepatří - i kdyby součet členů už
+ * dával tvar x = číslo, hráč sečtení musí zvolit sám (DEC-010).
+ */
 export function isSolved(state) {
+  if (needsCombine(state.left) || needsCombine(state.right)) {
+    return false;
+  }
   return (
     (isBareX(state.left) && effectiveX(state.right).n === 0) ||
     (isBareX(state.right) && effectiveX(state.left).n === 0)
@@ -279,6 +389,9 @@ export function partQuestion(slot) {
 export function describeOperation(operation) {
   if (operation.kind === 'expand') {
     return 'Roznásob závorku';
+  }
+  if (operation.kind === 'combine') {
+    return `Sečti stejné členy na ${operation.side === 'left' ? 'levé' : 'pravé'} straně`;
   }
   const term = operation.term ?? 'const';
   const amount =

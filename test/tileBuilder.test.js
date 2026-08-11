@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createTileBuilderModel, MAX_NUM_DIGITS } from '../js/ui/tileBuilderModel.js';
+import { createTileBuilderModel, MAX_NUM_DIGITS, HINT_NO_X } from '../js/ui/tileBuilderModel.js';
+import { createFreeEquationModel, HINT_NO_X as FREE_HINT_NO_X } from '../js/ui/freeEquationModel.js';
 import { parseEquation } from '../js/content/equationParse.js';
 
 /** Pomocník: postaví stranu stiskem dlaždic (číslice + symboly). */
@@ -233,4 +234,118 @@ test("canSubmit: removeCell odebere ')' a rozváží závorky - odeslání nepus
   assert.equal(m.canSubmit(), true);
   m.removeCell(6, 'left'); // odebere ')'
   assert.equal(m.canSubmit(), false);
+});
+
+/* --- Gate je stejně přísný jako u volného zápisu (DEC-015) --- */
+
+test('canSubmit: rovnice bez x neprojde - stejná podmínka jako volný zápis', () => {
+  const m = createTileBuilderModel();
+  build(m, ['3', '+', '5']);
+  m.setActiveSide('right');
+  build(m, ['8']);
+  assert.equal(m.canSubmit(), false, "'3 + 5 = 8' je rovnice bez neznámé");
+  assert.equal(m.submitHint(), HINT_NO_X);
+  assert.equal(HINT_NO_X, FREE_HINT_NO_X, 'oba buildery hlásí totéž');
+
+  // x stačí na jedné straně
+  m.clearSide();
+  build(m, ['x']);
+  assert.equal(m.canSubmit(), true);
+  assert.equal(m.submitHint(), null);
+});
+
+test("kvadratický zápis 'x · x' se zablokuje hned při kliku", () => {
+  const m = createTileBuilderModel();
+  build(m, ['x', '*']);
+  const blocked = m.pressTile('x');
+  assert.equal(blocked.status, 'blocked');
+  assert.match(blocked.note, /Dvě x se nesmí násobit/);
+  assert.deepEqual(m.getState().left.map((c) => c.kind), ['x', 'op'], 'dlaždice se nepřidala');
+
+  // i přes závorky: 2 · (x + 1) · (x + 1)
+  const m2 = createTileBuilderModel();
+  build(m2, ['2', '*', '(', 'x', '+', '1', ')', '*', '(']);
+  assert.equal(m2.pressTile('x').status, 'blocked');
+
+  // lineární součiny zůstávají povolené
+  const ok = createTileBuilderModel();
+  build(ok, ['2', '*', 'x', '+', '3', '*', 'x']);
+  assert.equal(ok.getState().left.length, 7);
+  const paren = createTileBuilderModel();
+  build(paren, ['2', '*', '(', 'x', '+', 'x', ')']);
+  assert.equal(paren.getState().left.length, 7, 'sčítání v závorce kvadratické není');
+});
+
+test('canSubmit: removeCell uprostřed strany odeslání nepustí (unparseable nevznikne)', () => {
+  // '+ 7 = 25' po odebrání x
+  const m = createTileBuilderModel();
+  build(m, ['x', '+', '7']);
+  m.setActiveSide('right');
+  build(m, ['2', '5']);
+  m.removeCell(0, 'left');
+  assert.equal(m.canSubmit(), false, 'strana začínající znaménkem');
+  assert.equal(parseEquation(m.getTokens()).status, 'unparseable', 'parser by ji odmítl');
+
+  // 'x · 2 3 · x' po odebrání '+' je součin dvou x (kvadratický zápis)
+  const m2 = createTileBuilderModel();
+  build(m2, ['x', '*', '2', '+', '3', '*', 'x']);
+  m2.setActiveSide('right');
+  build(m2, ['1', '0']);
+  assert.equal(m2.canSubmit(), true);
+  m2.removeCell(3, 'left');
+  assert.equal(m2.canSubmit(), false);
+  assert.match(m2.submitHint(), /Dvě x se nesmí násobit/);
+  assert.equal(parseEquation(m2.getTokens()).status, 'unparseable');
+
+  // '()' po odebrání obsahu závorky
+  const m3 = createTileBuilderModel();
+  build(m3, ['2', '(', 'x', ')']);
+  m3.setActiveSide('right');
+  build(m3, ['8']);
+  m3.removeCell(2, 'left');
+  assert.equal(m3.canSubmit(), false, 'prázdná závorka');
+  assert.equal(parseEquation(m3.getTokens()).status, 'unparseable');
+});
+
+test('DEC-015: oba buildery sestaví z x + 7 = 25 identické tokeny a status match', () => {
+  const tiles = createTileBuilderModel();
+  build(tiles, ['x', '+', '7']);
+  tiles.setActiveSide('right');
+  build(tiles, ['2', '5']);
+
+  const free = createFreeEquationModel();
+  for (const key of ['x', '+', '7', '=', '2', '5']) {
+    const result = /^[0-9]$/.test(key)
+      ? free.pressDigit(key)
+      : key === 'x'
+        ? free.pressX()
+        : key === '+'
+          ? free.pressOp('+')
+          : free.pressEq();
+    assert.equal(result.status, 'added');
+  }
+
+  assert.deepEqual(free.getTokens(), tiles.getTokens(), 'stejný token stream');
+  assert.equal(tiles.canSubmit(), true);
+  assert.equal(free.canSubmit(), true);
+  const expected = { left: lin(1, 7), right: lin(0, 25) };
+  assert.equal(parseEquation(tiles.getTokens(), expected).status, 'match');
+  assert.equal(parseEquation(free.getTokens(), expected).status, 'match');
+});
+
+test('submitHint: hlášky jsou konkrétní, české a nikdy neprozradí rovnici', () => {
+  const cases = [
+    { script: [], hint: 'Na obou stranách rovnice musí něco být.' },
+    { script: ['x', '+'], hint: 'Rovnice není dopsaná - za znaménkem ještě něco chybí.' },
+    { script: ['2', '(', 'x'], hint: 'Zavři závorku - ke každé otevřené patří zavřená.' },
+    { script: ['3'], hint: HINT_NO_X },
+  ];
+  for (const { script, hint } of cases) {
+    const m = createTileBuilderModel();
+    build(m, script);
+    m.setActiveSide('right');
+    build(m, ['5']);
+    assert.equal(m.submitHint(), hint, `scénář ${script.join(' ') || '(prázdno)'}`);
+    assert.doesNotMatch(m.submitHint(), /\d/, 'hláška nesmí obsahovat čísla ze zadání');
+  }
 });

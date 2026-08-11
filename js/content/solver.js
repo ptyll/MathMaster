@@ -47,15 +47,21 @@ export function factoredExpr(kN, kD, xN, xD, cN, cD) {
 export const cloneTerm = (t) => ({ x: { ...t.x }, c: { ...t.c } });
 
 /**
- * Strana s nesčtenými členy: terms = seznam top-level členů { x, c }.
- * x a c se dopočítou jako součet členů - drží se invariant, že kanonický
- * tvar je vždy k dispozici i před sečtením.
+ * JEDINÁ továrna na stranu se seznamem členů: terms = seznam top-level
+ * členů { x, c }. x a c se dopočítou jako součet členů - invariant 'x a c
+ * jsou vždy součet terms' (DEC-013) tak nejde rozbít omylem: kdo mění členy,
+ * musí jít tudy a dostane dopočtený kanonický tvar zdarma.
+ * `factor` je činitel před závorkou; členy pak popisují OBSAH závorky,
+ * takže i u k(x + x + 3) sedí x a c s tím, co je uvnitř.
  */
-export function multiTermSide(terms) {
+export function sideFromTerms(terms, factor = ONE) {
   const x = terms.reduce((sum, t) => addFractions(sum, t.x), makeFraction(0));
   const c = terms.reduce((sum, t) => addFractions(sum, t.c), makeFraction(0));
-  return { f: { ...ONE }, x, c, terms: terms.map(cloneTerm) };
+  return { f: { ...factor }, x, c, terms: terms.map(cloneTerm) };
 }
+
+/** Nesčtená strana bez závorky - obvyklý vstup z parseru. */
+export const multiTermSide = (terms) => sideFromTerms(terms);
 
 /**
  * Dává na straně smysl operace 'sečíst stejné členy'?
@@ -71,10 +77,18 @@ export function needsCombine(e) {
   return xTerms >= 2 || constTerms >= 2;
 }
 
-/** Sečtená podoba strany: standardní tvar ax + b, seznam členů zmizí. */
-export function combineSide(e) {
-  return { f: { ...ONE }, x: { ...e.x }, c: { ...e.c } };
+/**
+ * Strana bez seznamu členů - standardní tvar ax + b (u závorky f(ax + b)).
+ * Součty x a c už hodnotu členů nesou (invariant), takže stačí seznam
+ * zahodit. Činitel zůstává: kanonizace se týká jen nesčtených členů,
+ * závorku odstraňuje až roznásobení nebo dělení.
+ */
+export function canonicalSide(e) {
+  return { f: { ...factorOf(e) }, x: { ...e.x }, c: { ...e.c } };
 }
+
+/** Sečtená podoba strany po hráčově operaci combine (UCN-STEP-003). */
+export const combineSide = canonicalSide;
 
 /** Činitel před závorkou (1, když závorka není). */
 export function factorOf(e) {
@@ -96,8 +110,20 @@ export function effectiveC(e) {
   return multiplyFractions(factorOf(e), e.c);
 }
 
-/** Roznásobí závorku: k(x + b) -> kx + kb. */
+/**
+ * Roznásobí závorku: k(x + b) -> kx + kb.
+ * Nesčtené členy roznásobení přežijí - činitel se rozdělí mezi ně,
+ * 2(x + x + 3) -> 2x + 2x + 6. Zahodit je a vrátit rovnou součet by byla
+ * tichá kanonizace: roznásobit závorku a sečíst členy jsou dvě různá
+ * rozhodnutí a to druhé musí zůstat na hráči (DEC-010).
+ */
 export function expandExpr(e) {
+  const k = factorOf(e);
+  if (Array.isArray(e.terms)) {
+    return sideFromTerms(
+      e.terms.map((t) => ({ x: multiplyFractions(k, t.x), c: multiplyFractions(k, t.c) }))
+    );
+  }
   return { f: { ...ONE }, x: effectiveX(e), c: effectiveC(e) };
 }
 
@@ -204,17 +230,18 @@ export function solveLinearSteps(left, right) {
   // '-x = -11' se řeší jedním vynásobením -1, kdežto prohozením by vznikla
   // rada 'přičti x' a teprve pak 'přičti 11', což ze současného stavu
   // vypadá jako nesmysl. Proto podmínka na nenulovou konstantu vlevo.
-  if (
-    effectiveX(left).n < 0 &&
-    effectiveX(right).n === 0 &&
-    effectiveC(left).n !== 0
-  ) {
-    return solveLinearSteps(right, left);
-  }
+  const swap =
+    effectiveX(left).n < 0 && effectiveX(right).n === 0 && effectiveC(left).n !== 0;
+  const from = swap ? { l: right, r: left } : { l: left, r: right };
 
   const steps = [];
-  let l = cloneExpr(left);
-  let r = cloneExpr(right);
+  // Odvození je algebraický výpočet, ne hráčův krok - nesčtené členy sem
+  // nepatří a tichá kanonizace je tu naopak SPRÁVNĚ (DEC-013). Kroky níž
+  // přepisují x a c, kdežto formatExpr kreslí přednostně terms: se
+  // zastaralým seznamem by nápověda ukázala 'x = 3 + 5' místo 'x = 14'.
+  // canonicalSide zároveň kopíruje - vstup je živý stav relace, nesmí se mutovat.
+  let l = canonicalSide(from.l);
+  let r = canonicalSide(from.r);
 
   const push = (operation, explanation) => {
     steps.push({
@@ -229,7 +256,21 @@ export function solveLinearSteps(left, right) {
     });
   };
 
-  // 0. Závorka. Dělení činitelem je kratší cesta než roznásobení:
+  // 0a. Sečtení členů řekneme nahlas. Jinak by dítě vidělo, jak se
+  //     'x + x + 8 = 20 + x' beze slova změnilo na 'x + 8 = 20', a nevědělo,
+  //     kde se to stalo. Stav po kroku už je kanonický (viz výše).
+  if (needsCombine(from.l) || needsCombine(from.r)) {
+    const where =
+      needsCombine(from.l) && needsCombine(from.r)
+        ? 'obou stranách'
+        : `${needsCombine(from.l) ? 'levé' : 'pravé'} straně`;
+    push(
+      `Sečti stejné členy na ${where}`,
+      'Stejné druhy členů sečteme dohromady - hodnota strany se tím nemění, jen se zpřehlední.'
+    );
+  }
+
+  // 0b. Závorka. Dělení činitelem je kratší cesta než roznásobení:
   //    2(x + 10) = 36  ->  x + 10 = 18. Roznásobení je stejně platné,
   //    krokový režim ho hráči nabízí jako druhou možnost.
   if (isFactored(r)) {

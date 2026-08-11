@@ -23,13 +23,18 @@
  *   onSubmit(result, tokens)  zavolá se při každém Hotovo; mise podle
  *                         result.status přejde do krokového režimu
  *                         (start z result.multiTerm ?? result.canonical)
- * }) -> { element, getTokens, destroy }
+ * }) -> { element, getTokens, showNote, destroy }
+ *
+ * showNote(text, tone) nechá misi přepsat hlášku i po 'match' - relace umí
+ * rovnici odmítnout z důvodu, který builder sám nevidí (hráč napsal rovnou
+ * výsledek). Volný zápis má stejnou metodu, buldery zůstávají zaměnitelné.
  */
 
 import { createTileBuilderModel } from './tileBuilderModel.js';
 import { parseEquation } from '../content/equationParse.js';
 
 const SIDE_HINTS = { left: 'Sem slož levou stranu', right: 'Sem slož pravou stranu' };
+const SIDE_LABELS = { left: 'Levá strana rovnice', right: 'Pravá strana rovnice' };
 
 /** Zobrazení buňky na dlaždici (UI tvary symbolů, ne parserové). */
 const CELL_LABELS = { x: 'x', lparen: '(', rparen: ')' };
@@ -84,8 +89,13 @@ export function createTileEquationBuilder(container, { problemText, expected, on
     box.className = 'tile-box';
     box.dataset.side = sideName;
     box.tabIndex = 0;
-    box.setAttribute('role', 'button');
-    box.setAttribute('aria-label', sideName === 'left' ? 'Levá strana rovnice' : 'Pravá strana rovnice');
+    // role='group', ne 'button': u tlačítka jsou potomci dle ARIA
+    // 'children presentational' a odečítač by dlaždice uvnitř schránky vůbec
+    // nepřečetl (fokusovat by se daly, ale slyšet ne). Schránka zůstává
+    // klikatelná i fokusovatelná - která strana je aktivní, říká aria-current
+    // a doplněk v aria-label (renderBoxes je přepisuje).
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-label', SIDE_LABELS[sideName]);
     // Klik na dlaždici ve schránce ji odebere, kamkoliv jinam (včetně
     // textu podmětu) schránku jen aktivuje - poznáme to podle cíle události.
     box.addEventListener('click', (event) => {
@@ -150,13 +160,18 @@ export function createTileEquationBuilder(container, { problemText, expected, on
     renderBoxes();
   });
 
+  // Proč je Hotovo zšedlé - bez nápisu by dítě u '3 + 5 = 8' jen zíralo na
+  // mrtvé tlačítko. Stejné místo i role jako u volného zápisu (DEC-015).
+  const hintEl = document.createElement('span');
+  hintEl.className = 'tile-submit-hint';
+
   const submitBtn = document.createElement('button');
   submitBtn.type = 'button';
   submitBtn.className = 'btn btn-primary tile-submit';
   submitBtn.textContent = 'Hotovo';
   submitBtn.addEventListener('click', handleSubmit);
 
-  actionsEl.append(clearBtn, submitBtn);
+  actionsEl.append(clearBtn, hintEl, submitBtn);
 
   root.append(problemEl, boxesEl, feedbackEl, paletteEl, actionsEl);
   container.appendChild(root);
@@ -194,16 +209,45 @@ export function createTileEquationBuilder(container, { problemText, expected, on
           cell.kind === 'num' ? cell.text : cell.kind === 'op' ? OP_LABELS[cell.op] : CELL_LABELS[cell.kind];
         cellBtn.setAttribute('aria-label', `Odebrat ${cellBtn.textContent}`);
         cellBtn.addEventListener('click', () => {
+          // renderBoxes staví dlaždice znovu, takže tahle právě zmizí z DOM
+          // a fokus by spadl na <body> - klávesnicový hráč by po každém
+          // odebrání taboval od začátku obrazovky.
+          const hadFocus = document.activeElement === cellBtn;
           model.removeCell(index, sideName);
           setFeedback(null);
           renderBoxes();
+          if (hadFocus) {
+            focusAfterRemoval(sideName, index);
+          }
         });
         box.appendChild(cellBtn);
       });
-      box.classList.toggle('is-active', state.active === sideName);
-      box.setAttribute('aria-pressed', String(state.active === sideName));
+      const isActive = state.active === sideName;
+      box.classList.toggle('is-active', isActive);
+      box.setAttribute('aria-current', String(isActive));
+      box.setAttribute(
+        'aria-label',
+        isActive ? `${SIDE_LABELS[sideName]}, sem se skládají dlaždice` : SIDE_LABELS[sideName]
+      );
     }
     submitBtn.disabled = !state.canSubmit;
+    // Nápis u zablokovaného Hotova ('Rovnice musí obsahovat x') - dokud jsou
+    // obě schránky prázdné, mluví za stav jejich vlastní nápisy a tenhle by
+    // byl hluk. Stejné chování má volný zápis (js/ui/freeEquationInput.js).
+    const empty = state.left.length === 0 && state.right.length === 0;
+    hintEl.textContent = !state.canSubmit && !empty ? state.submitHint : '';
+  }
+
+  /**
+   * Po odebrání dlaždice vrátí fokus na rozumné místo: na dlaždici, která
+   * se na uvolněné pozici posunula, jinak na poslední ve schránce a při
+   * prázdné schránce na ni samotnou.
+   */
+  function focusAfterRemoval(sideName, index) {
+    const box = boxEls[sideName];
+    const cellBtns = box.querySelectorAll('.tile-cell');
+    const next = cellBtns[index] ?? cellBtns[cellBtns.length - 1] ?? box;
+    next.focus();
   }
 
   /** Zatřesení schránkami po špatné validaci - dlaždice zůstávají pro opravu. */
@@ -239,6 +283,14 @@ export function createTileEquationBuilder(container, { problemText, expected, on
   return {
     element: root,
     getTokens: () => model.getTokens(),
+    // Mise umí rovnici odmítnout i po 'match' (např. hráč napsal rovnou
+    // výsledek) - bez tohohle háku by dítě zmáčklo Hotovo a nestalo by se nic.
+    showNote(text, tone = 'wrong') {
+      if (tone === 'wrong') {
+        shake();
+      }
+      setFeedback(text, tone);
+    },
     destroy() {
       root.remove();
     },

@@ -15,6 +15,12 @@ import { formatExpr, solveLinearSteps } from '../content/solver.js';
 import { equationInputKind, machineOperations } from '../content/wordProblems.js';
 
 /**
+ * Obecná vrstva 2 pro úlohu bez writeHint. Nesmí prozradit rovnici, proto
+ * jen postrčí k překladu zadání - konkrétní frázi pojmenovat neumí.
+ */
+const GENERIC_WRITE_HINT = 'Přečti zadání po částech: co se s neznámou x postupně děje?';
+
+/**
  * Text vrstvené nápovědy ve fázi 'napiš rovnici' slovní úlohy (UCV-MISSION-003).
  * Čistá funkce kvůli testům - DOM vrstva ji jen zobrazí.
  * 1 = označ si neznámou x, 2 = nápověda k překladu fráze (writeHint z generátoru,
@@ -25,10 +31,35 @@ export function wordEquationHintText(exercise, hintLevel) {
     return 'Co je neznámá? Označ si ji x.';
   }
   if (hintLevel === 2) {
-    return exercise.writeHint ?? exercise.hint;
+    // Řešitelský 'hint' z generátoru sem NESMÍ ani jako záloha: u řady forem
+    // je to rovnou celá rovnice ('zůstane 3/4 z x - a to je 20'), takže by
+    // vrstva 2 dělala práci vrstvy 3 a hráč by přeskočil vlastní překlad.
+    return exercise.writeHint ?? GENERIC_WRITE_HINT;
   }
   const { left, right } = exercise.equation;
   return `Rovnice je: ${formatExpr(left)} = ${formatExpr(right)}`;
+}
+
+/**
+ * Souhrn mise doplněný o druhy chyb, které mise sama nezaznamenala -
+ * relace přeskočeného příkladu (UCV-STATS-001). Čistá funkce kvůli testům.
+ *
+ * Sčítají se JEN druhy chyb, ne počet chyb: přeskočení zůstává jedním
+ * výsledkem za příklad (jedna chyba pro hvězdy, jeden záznam pro
+ * adaptivitu) přesně jako u recordStepResult.
+ * @param {object} summary z mission.getSummary()
+ * @param {Record<string, number>} carried nasbírané druhy chyb
+ */
+export function summaryWithCarriedErrors(summary, carried) {
+  const kinds = Object.entries(carried ?? {});
+  if (kinds.length === 0) {
+    return summary;
+  }
+  const errors = { ...summary.errors };
+  for (const [kind, count] of kinds) {
+    errors[kind] = (errors[kind] ?? 0) + count;
+  }
+  return { ...summary, errors };
 }
 
 /**
@@ -144,8 +175,34 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
   let viewer = null;
   let stepSession = null; // relace krokového řešení, null mimo krokový režim
   let stepUi = null;
+  /**
+   * Druhy chyb z přeskočených příkladů. mission.skip() o krokové relaci neví
+   * a zapíše jen 'skipped', takže by se ztratilo právě to, co rodiče zajímá:
+   * ŽE dítě pětkrát nesestavilo rovnici a teprve pak to vzdalo (UCV-STATS-001).
+   * Do souhrnu se přimíchají až v missionSummary().
+   */
+  const carriedErrors = {};
 
   const stepModeEnabled = !!mission.config.stepMode;
+
+  /** Souhrn pro onFinish - vždy přes tuhle funkci, ať se nasbírané druhy chyb neztratí. */
+  function missionSummary() {
+    return summaryWithCarriedErrors(mission.getSummary(), carriedErrors);
+  }
+
+  /**
+   * Odloží druhy chyb z rozpracované relace do souhrnu mise. Volá se před
+   * přeskočením: relace se zahodí, ale to, v čem se dítě plete, zůstat musí.
+   * Relace bez krokového režimu ({ kind: 'none' }) getOutcome nemá.
+   */
+  function carryStepErrors() {
+    if (!stepSession || typeof stepSession.getOutcome !== 'function') {
+      return;
+    }
+    for (const [kind, count] of Object.entries(stepSession.getOutcome().errors ?? {})) {
+      carriedErrors[kind] = (carriedErrors[kind] ?? 0) + count;
+    }
+  }
 
   /**
    * Příklad pro vysvětlení. V krokovém režimu se kroky přepočítají z místa,
@@ -251,10 +308,6 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
       // Fáze 'napiš rovnici': zadání velkým písmem renderuje builder, karta
       // by ho zdvojovala - a po validaci se zmenší do rohu (enterWordSteps).
       exerciseEl.hidden = true;
-      const ops = machineOperations(exercise);
-      if (ops) {
-        inputHost.appendChild(buildMachineDiagram(ops));
-      }
       const createBuilder =
         equationInputKind(exercise.difficulty) === 'tiles'
           ? createTileEquationBuilder
@@ -264,6 +317,7 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
         expected: exercise.equation,
         onSubmit: handleEquationSubmit,
       });
+      insertMachineDiagram(exercise);
       renderProgress();
       return;
     }
@@ -313,6 +367,27 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
   }
 
   /**
+   * Diagram početního stroje pod text zadání (UCV-MISSION-003): příběh je
+   * hlavní úkol, stroj jeho ILUSTRACE - nad textem by hráč četl šipky dřív
+   * než zadání, ke kterému patří.
+   *
+   * Zadání si vykresluje builder sám (kontrakt DEC-015 předává problemText,
+   * o pořadí uvnitř nic neříká), takže diagram vkládáme až za jeho odstavec
+   * se zadáním. Buildery zůstávají zaměnitelné: kdyby odstavec nenašel,
+   * skončí diagram nahoře jako dřív - lepší špatné pořadí než žádný diagram.
+   */
+  function insertMachineDiagram(exercise) {
+    const ops = machineOperations(exercise);
+    if (!ops || !input) {
+      return;
+    }
+    const diagram = buildMachineDiagram(ops);
+    const problemEl = input.element.querySelector('.tile-problem, .free-eq-problem');
+    const before = problemEl ? problemEl.nextSibling : input.element.firstChild;
+    input.element.insertBefore(diagram, before);
+  }
+
+  /**
    * Početní stroj jako jednoduchý diagram šipek: vstup -> operace -> výstup.
    * Generuje se ze struktury úlohy (machineOperations), nekreslí se ručně.
    */
@@ -357,6 +432,13 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
       if (result.status === 'mismatch') {
         avatar.react('wrong');
         hintBtn.classList.add('attention');
+      }
+      // Relace umí rovnici odmítnout i po 'match' (hráč napsal rovnou
+      // výsledek). Builder si takový zápis pochválil, takže jeho hlášku
+      // musíme přepsat - jinak dítě zmáčkne Hotovo a nestane se nic.
+      if (recorded.note) {
+        input?.showNote?.(recorded.note);
+        avatar.react('wrong');
       }
       // unparseable = nedopsaný zápis - jen hláška u builderu, žádná chyba.
       return;
@@ -437,7 +519,7 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
       timer = setTimeout(() => {
         timer = null;
         destroy();
-        onFinish(mission.getSummary());
+        onFinish(missionSummary());
       }, 1100);
       return;
     }
@@ -484,7 +566,7 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
         timer = setTimeout(() => {
           timer = null;
           destroy();
-          onFinish(mission.getSummary());
+          onFinish(missionSummary());
         }, 900);
         return;
       }
@@ -588,10 +670,13 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
       if (!accepting) {
         return;
       }
+      // Nejdřív posbírat, v čem se dítě u tohohle příkladu pletlo - skip()
+      // relaci nezná a zapsal by holé 'skipped'.
+      carryStepErrors();
       const result = mission.skip();
       if (result.missionDone) {
         destroy();
-        onFinish(mission.getSummary());
+        onFinish(missionSummary());
       } else {
         renderExercise();
       }

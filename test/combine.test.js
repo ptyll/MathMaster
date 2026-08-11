@@ -4,9 +4,14 @@ import assert from 'node:assert/strict';
 import {
   expr,
   multiTermSide,
+  sideFromTerms,
   needsCombine,
   combineSide,
   formatTerms,
+  formatExpr,
+  isFactored,
+  solveLinearSteps,
+  solvedValue,
 } from '../js/content/solver.js';
 import {
   OPERATION_KINDS,
@@ -284,6 +289,163 @@ test('DEC-012: strana bez čeho sčítat nedostane multi-term', () => {
   const res2 = parseEquation(consts);
   assert.equal(res2.multiTerm.left.terms.length, 3);
   assert.equal(needsCombine(res2.multiTerm.left), true);
+});
+
+/* --- DEC-013: invariant 'x a c jsou vždy součet členů' --- */
+
+/** Ověří, že strana se seznamem členů má x a c rovné jejich součtu. */
+function assertTermsInvariant(side, label) {
+  if (!Array.isArray(side.terms)) {
+    return;
+  }
+  const sum = sideFromTerms(side.terms, side.f);
+  assert.deepEqual(side.x, sum.x, `${label}: x se rozešlo se součtem členů`);
+  assert.deepEqual(side.c, sum.c, `${label}: c se rozešlo se součtem členů`);
+}
+
+test('DEC-013-T1: solveLinearSteps odvozuje nad sečteným tvarem, ne nad zastaralými členy', () => {
+  // x/2 + 1 = 3 + 5 (nesčtená pravá strana z parseru), řešení x = 14.
+  // Dřív kroky přepisovaly x a c, ale formatExpr kreslil pořád původní členy -
+  // nápověda 'celé řešení' skončila u nesmyslu 'Neznámá x = 3 + 5'.
+  const left = expr(1, 2, 1, 1);
+  const right = multiTermSide([ct(3), ct(5)]);
+  const steps = solveLinearSteps(left, right);
+
+  assert.deepEqual(
+    steps.map((s) => `${s.leftSide} = ${s.rightSide}`),
+    ['x/2 + 1 = 8', 'x/2 = 7', 'x = 14', 'x = 14']
+  );
+  assert.equal(steps[0].operation, 'Sečti stejné členy na pravé straně');
+  assert.equal(steps.at(-1).operation, 'Výsledek');
+  assert.deepEqual(steps.at(-1).rightExpr.c, { n: 14, d: 1 });
+  assert.match(steps.at(-1).explanation, /x = 14/);
+
+  // odvozené stavy jsou kanonické - žádný z nich už nesčtené členy nenese
+  for (const s of steps) {
+    assert.equal(s.leftExpr.terms, undefined);
+    assert.equal(s.rightExpr.terms, undefined);
+  }
+
+  // vstup je živý stav relace (missionScreen ho předává přímo) - nesmí se mutovat
+  assert.equal(formatExpr(right), '3 + 5');
+  assert.deepEqual(right.terms, [ct(3), ct(5)]);
+});
+
+test('DEC-013-T2: odvození zvládne nesčtené členy na obou stranách', () => {
+  // x + x + 8 = 20 + x  ->  x = 12; dřív krok 'Odečti x' vypsal 'x + x + 8 = 20'
+  const steps = solveLinearSteps(
+    multiTermSide([xt(1), xt(1), ct(8)]),
+    multiTermSide([ct(20), xt(1)])
+  );
+  assert.deepEqual(
+    steps.map((s) => `${s.leftSide} = ${s.rightSide}`),
+    ['2x + 8 = x + 20', 'x + 8 = 20', 'x = 12', 'x = 12']
+  );
+  assert.equal(steps[0].operation, 'Sečti stejné členy na levé straně');
+  assert.equal(steps[1].operation, 'Odečti x z obou stran');
+
+  // x + x + 8 = 20 + 1 + x  ->  x = 13; sčítá se na obou stranách naráz
+  const both = solveLinearSteps(
+    multiTermSide([xt(1), xt(1), ct(8)]),
+    multiTermSide([ct(20), ct(1), xt(1)])
+  );
+  assert.equal(both[0].operation, 'Sečti stejné členy na obou stranách');
+  assert.equal(both[0].leftSide, '2x + 8');
+  assert.equal(both.at(-1).rightSide, '13');
+});
+
+test('DEC-013-T3: násobení a dělení nad závorkou s nesčtenými členy drží invariant', () => {
+  // 2(2x + x) = 18  ->  x = 3. Členy popisují OBSAH závorky, škáluje se činitel.
+  const start = { left: sideFromTerms([xt(2), xt(1)], f(2)), right: expr(0, 1, 18, 1) };
+  assertTermsInvariant(start.left, 'výchozí stav');
+  assert.deepEqual(solvedValue(start.left, start.right), { n: 3, d: 1 });
+
+  for (const op of [{ kind: 'mul', operand: f(3) }, { kind: 'div', operand: f(2) }]) {
+    const applied = applyOperation(start, op);
+    assert.equal(applied.status, 'ok');
+    const side = applied.next.left;
+    // dřív se škáloval činitel A ZÁROVEŇ členy - součet členů se rozešel s x
+    assert.deepEqual(side.terms, [xt(2), xt(1)], 'obsah závorky se nemění');
+    assertTermsInvariant(side, describeOperation(op));
+    assert.deepEqual(side.x, { n: 3, d: 1 });
+    assert.deepEqual(
+      solvedValue(side, applied.next.right),
+      { n: 3, d: 1 },
+      'rovnice zůstává ekvivalentní'
+    );
+  }
+});
+
+test('DEC-013-T4: roznásobení závorky členy zachová - sečíst je musí pořád hráč', () => {
+  // 2(x + x + 3) = 18  ->  2x + 2x + 6 = 18, teprve pak sečtení a x = 3
+  const start = { left: sideFromTerms([xt(1), xt(1), ct(3)], f(2)), right: expr(0, 1, 18, 1) };
+  const applied = applyOperation(start, { kind: 'expand' });
+  assert.equal(applied.status, 'ok');
+  assert.equal(isFactored(applied.next.left), false, 'závorka zmizela');
+  assert.deepEqual(applied.next.left.terms, [xt(2), xt(2), ct(6)], 'činitel se rozdělil mezi členy');
+  assertTermsInvariant(applied.next.left, 'expand');
+  assert.equal(formatExpr(applied.next.left), '2x + 2x + 6');
+  assert.equal(needsCombine(applied.next.left), true, 'sečtení zůstává volbou hráče');
+  assert.equal(checkStep(start, applied.next).status, 'ok');
+
+  // strana bez závorky o své nesčtené členy roznásobením taky nepřijde
+  const mixed = { left: sideFromTerms([xt(1), xt(1)], f(2)), right: multiTermSide([ct(10), ct(2)]) };
+  const res = applyOperation(mixed, { kind: 'expand' });
+  assert.equal(res.status, 'ok');
+  assert.deepEqual(res.next.right.terms, [ct(10), ct(2)]);
+  assertTermsInvariant(res.next.right, 'expand druhé strany');
+});
+
+test('DEC-013-T5: invariant přežije každou operaci nad nesčtenou stranou', () => {
+  // 3x + 3 = 15 i 2(3x + 3) = 30 mají obě řešení x = 4
+  const states = {
+    'bez závorky': { left: multiTermSide([xt(2), ct(3), xt(1)]), right: expr(0, 1, 15, 1) },
+    'v závorce': { left: sideFromTerms([xt(2), ct(3), xt(1)], f(2)), right: expr(0, 1, 30, 1) },
+  };
+  const operations = [
+    { kind: 'add', operand: f(4) },
+    { kind: 'sub', operand: f(4) },
+    { kind: 'add', operand: f(2), term: 'x' },
+    { kind: 'sub', operand: f(2), term: 'x' },
+    { kind: 'mul', operand: f(3) },
+    { kind: 'div', operand: f(2) },
+    { kind: 'expand' },
+    { kind: 'combine', side: 'left' },
+  ];
+
+  let checked = 0;
+  for (const [label, state] of Object.entries(states)) {
+    for (const op of operations) {
+      const res = applyOperation(state, op);
+      if (res.status !== 'ok') {
+        continue; // přes závorku se nepřičítá, bez závorky není co roznásobit
+      }
+      const where = `${label} / ${describeOperation(op)}`;
+      assertTermsInvariant(res.next.left, where);
+      assertTermsInvariant(res.next.right, where);
+      assert.deepEqual(solvedValue(res.next.left, res.next.right), { n: 4, d: 1 }, where);
+      checked += 1;
+    }
+  }
+  assert.ok(checked >= 10, 'většina kombinací operace × tvar strany se opravdu provedla');
+});
+
+test('DEC-013-T6: sideFromTerms je jediná továrna na členy a x, c vždy dopočítá', () => {
+  const side = sideFromTerms([xt(2), ct(3), xt(1, 2)]);
+  assert.deepEqual(side.x, { n: 5, d: 2 });
+  assert.deepEqual(side.c, { n: 3, d: 1 });
+  assert.deepEqual(side.f, { n: 1, d: 1 });
+  assert.deepEqual(multiTermSide([xt(2), ct(3), xt(1, 2)]), side, 'multiTermSide = tovární zkratka');
+
+  // vstupní seznam si továrna klonuje - volající si svůj dál drží
+  const terms = [xt(1), xt(2)];
+  sideFromTerms(terms).terms[0].x.n = 99;
+  assert.deepEqual(terms[0], xt(1));
+
+  // sečtení členů nad závorkou činitel neztratí (jinak by se změnilo řešení)
+  const factored = sideFromTerms([xt(2), xt(1)], f(2));
+  assert.deepEqual(combineSide(factored).f, { n: 2, d: 1 });
+  assert.equal(combineSide(factored).terms, undefined);
 });
 
 test('DEC-012: relace umí startovat přímo z multiTerm výstupu parseru', () => {

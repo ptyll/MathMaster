@@ -48,19 +48,28 @@ const FRACTION_COEFFICIENTS = Object.freeze([
  * Distraktory pro celočíselnou odpověď - stejná logika jako u rovnic:
  * hodnota±1 a typická chyba o koeficient/konstantu. Bez duplicit,
  * bez správné odpovědi, bez nuly a záporných čísel.
+ * Vždy vrací právě 3 hodnoty, aby šla postavit nabídka ze 4 možností.
  */
 function intDistractors(answer, delta) {
-  const candidates = [answer + 1, answer - 1, answer + delta, answer - delta, answer + 2];
   const seen = new Set([answer]);
   const result = [];
-  for (const c of candidates) {
+  const take = (c) => {
     if (c > 0 && !seen.has(c)) {
       seen.add(c);
       result.push(c);
     }
-    if (result.length === 3) {
-      break;
+    return result.length === 3;
+  };
+  for (const c of [answer + 1, answer - 1, answer + delta, answer - delta, answer + 2]) {
+    if (take(c)) {
+      return result;
     }
+  }
+  // U malých odpovědí (typicky answer = 1) spadne většina typických chyb pod
+  // nulu nebo se zdvojí - dorovnáme čísly nad odpovědí, aby distraktory byly
+  // vždy tři. Nahoru se dá jít vždy, dolů u jedničky ne.
+  for (let c = answer + 3; result.length < 3; c++) {
+    take(c);
   }
   return result;
 }
@@ -185,7 +194,10 @@ function generatePlusTimes(prng, seed, difficulty) {
     // Řešitelská nápověda pro krokovou fázi - rovnici neprozrazuje (tu má
     // ukázat až vrstva 3 ve fázi 'napiš rovnici').
     hint: `Stroj napřed přičetl ${b} a pak násobil ${a} - závorku odstraníš dělením ${a} na obou stranách.`,
-    writeHint: `Pořadí je důležité: nejdřív 'přičte ${b}', takže x + ${b}, a pak celek 'vynásobí ${a}' - součet dej do závorky, ${a}(x + ${b}).`,
+    // Vrstva 2 učí PRAVIDLO o pořadí operací a závorce, hotový výraz
+    // a(x + b) neskládá - to je právě ta obtížnost, kterou má hráč zvládnout
+    // sám (rovnici ukáže až vrstva 3).
+    writeHint: `Vstup je x. Stroj nejdřív 'přičte ${b}' a teprve výsledek 'vynásobí ${a}' - co stroj udělal dřív, patří do závorky a činitel se píše před ni.`,
     seed,
     difficulty,
   });
@@ -328,11 +340,16 @@ export function machineOperations(problem) {
 /**
  * Vygeneruje slovní úlohu. Stejný seed + difficulty = stejná úloha.
  * @param {number} seed celé číslo
- * @param {number} difficulty 2-6 (mimo rozsah se přiřadí k nejbližšímu kraji)
+ * @param {number} difficulty 2-6 (mimo rozsah se přiřadí k nejbližšímu kraji,
+ *   nečíselná hodnota k nejlehčí obtížnosti 2)
  */
 export function generateWordProblem(seed, difficulty = 2) {
   const prng = createPrng(seed);
-  const d = Math.min(6, Math.max(2, Math.trunc(difficulty)));
+  // Nečíselná obtížnost (NaN, 'abc', rozbitý uložený stav) nemá nejbližší kraj,
+  // takže by proklouzla do větve default a šířila se dál jako difficulty: NaN.
+  // Padáme na 2 - dítě dostane raději nejlehčí úlohu než nejtěžší.
+  const requested = Math.trunc(Number(difficulty));
+  const d = Number.isNaN(requested) ? 2 : Math.min(6, Math.max(2, requested));
 
   switch (d) {
     case 2:

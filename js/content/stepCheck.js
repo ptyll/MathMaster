@@ -23,7 +23,7 @@ import {
 } from './fractions.js';
 import {
   cloneExpr,
-  cloneTerm,
+  sideFromTerms,
   solvedValue,
   factorOf,
   isFactored,
@@ -75,6 +75,9 @@ export function applyOperation(state, operation) {
     if (!isFactored(state.left) && !isFactored(state.right)) {
       return { status: 'invalid', next: null, note: 'Tady žádná závorka k roznásobení není.' };
     }
+    // Nesčtené členy roznásobení přežijí (expandExpr činitele rozdělí mezi ně):
+    // hráč si zvolil roznásobit závorku, ne sečíst členy - to druhé rozhodnutí
+    // mu operace vzít nesmí (DEC-010).
     return {
       status: 'ok',
       next: { left: expandExpr(state.left), right: expandExpr(state.right) },
@@ -194,34 +197,29 @@ export function applyOperation(state, operation) {
 
     // Strana s nesčtenými členy si je nechává (žádná tichá kanonizace):
     // násobení/dělení škáluje každý člen, přičtení/odečtení člen přidá.
-    // x a c výše už nesou součet, takže invariant 'x,c = součet členů' platí dál.
+    // Nový seznam jde vždy přes sideFromTerms, které z členů dopočítá x a c -
+    // invariant 'x,c = součet členů' (DEC-013) tak drží v každé větvi, včetně
+    // té, kde se nad závorkou škáluje činitel a x,c z nextSide by nesouhlasily.
     if (!Array.isArray(side.terms)) {
       return nextSide;
     }
+    const scaled = (op) =>
+      side.terms.map((t) => ({ x: op(t.x, operand), c: op(t.c, operand) }));
     switch (kind) {
       case 'add':
-        return { ...nextSide, terms: [...side.terms.map(cloneTerm), appendedTerm(term, operand)] };
+        return sideFromTerms([...side.terms, appendedTerm(term, operand)], nextSide.f);
       case 'sub':
-        return {
-          ...nextSide,
-          terms: [...side.terms.map(cloneTerm), appendedTerm(term, { n: -operand.n, d: operand.d })],
-        };
-      case 'mul':
-        return {
-          ...nextSide,
-          terms: side.terms.map((t) => ({
-            x: multiplyFractions(t.x, operand),
-            c: multiplyFractions(t.c, operand),
-          })),
-        };
+        return sideFromTerms(
+          [...side.terms, appendedTerm(term, { n: -operand.n, d: operand.d })],
+          nextSide.f
+        );
       default:
-        return {
-          ...nextSide,
-          terms: side.terms.map((t) => ({
-            x: divideFractions(t.x, operand),
-            c: divideFractions(t.c, operand),
-          })),
-        };
+        // U závorky se škáluje jen činitel před ní - členy uvnitř zůstávají,
+        // jinak by se násobení promítlo dvakrát (2(2x + x) × 3 by dalo
+        // 6(6x + 3x)) a součet členů by se rozešel s obsahem závorky.
+        return isFactored(side)
+          ? sideFromTerms(side.terms, nextSide.f)
+          : sideFromTerms(scaled(kind === 'mul' ? multiplyFractions : divideFractions), nextSide.f);
     }
   };
 

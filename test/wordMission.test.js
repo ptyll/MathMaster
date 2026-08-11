@@ -10,7 +10,7 @@ import {
   machineOperations,
 } from '../js/content/wordProblems.js';
 import { expr, factoredExpr, effectiveX, effectiveC, formatExpr } from '../js/content/solver.js';
-import { wordEquationHintText } from '../js/ui/missionScreen.js';
+import { wordEquationHintText, summaryWithCarriedErrors } from '../js/ui/missionScreen.js';
 
 // --- Pomocníci pro skládání tokenů (stejný vzor jako equationParse.test.js) --
 
@@ -325,4 +325,108 @@ test('UCV-MISSION-003: vrstvená nápověda ve fázi napiš rovnici - 2 překlad
       assert.equal(wordEquationHintText(exercise, 3), expected, `${exercise.form}: vrstva 3`);
     }
   }
+});
+
+test('vrstva 2 nesáhne po řešitelském hintu ani u úlohy bez writeHint', () => {
+  // Ručně sestavená úloha (generátor writeHint dodává vždy). Její řešitelský
+  // hint prozrazuje celou rovnici - přesně to vrstva 2 ukázat nesmí.
+  const exercise = { ...nthPartExercise(), hint: 'Zůstane 3/4 z x - a to je 6.' };
+  assert.equal(exercise.writeHint, undefined);
+
+  const level2 = wordEquationHintText(exercise, 2);
+  assert.notEqual(level2, exercise.hint);
+  assert.ok(!level2.includes('='), `vrstva 2 prozradila rovnici: ${level2}`);
+  assert.ok(!level2.includes('3/4'), `vrstva 2 prozradila koeficient: ${level2}`);
+  // Vrstva 3 rovnici ukázat smí - tam je od toho.
+  assert.equal(wordEquationHintText(exercise, 3), 'Rovnice je: (3/4)x = 6');
+});
+
+// --- Přeskočení příkladu si nese druhy chyb (UCV-STATS-001) ------------------
+
+test('summaryWithCarriedErrors sčítá druhy chyb a počet chyb nechává být', () => {
+  const summary = { mistakes: 2, stars: 2, errors: { strategy: 1, skipped: 1 } };
+  const merged = summaryWithCarriedErrors(summary, { strategy: 2, equationSetup: 3 });
+  assert.deepEqual(merged.errors, { strategy: 3, skipped: 1, equationSetup: 3 });
+  // Počet chyb (hvězdy) i zbytek souhrnu zůstávají beze změny.
+  assert.equal(merged.mistakes, 2);
+  assert.equal(merged.stars, 2);
+  // Původní souhrn se nemutuje.
+  assert.deepEqual(summary.errors, { strategy: 1, skipped: 1 });
+  // Bez nasbíraných chyb se souhrn nekopíruje zbytečně.
+  assert.equal(summaryWithCarriedErrors(summary, {}), summary);
+});
+
+test('přeskočení slovní úlohy nezahodí nasbírané chyby equationSetup', () => {
+  const mission = wordMission({ exerciseCount: 1 });
+  const exercise = mission.currentExercise;
+  const session = createStepSession(exercise);
+
+  // Hráč pětkrát sestaví rovnici, která na zadání nesedí.
+  const wrongTokens = [...sideTokens({ x: { n: 1, d: 1 }, c: { n: 1, d: 1 } }), T.eq, T.num(99)];
+  for (let i = 0; i < 5; i++) {
+    session.recordEquationResult(parseEquation(wrongTokens, exercise.equation));
+  }
+
+  // Přesně to, co dělá obrazovka mise při kliknutí na 'Přeskočit'.
+  const carried = { ...session.getOutcome().errors };
+  const result = mission.skip();
+  assert.equal(result.missionDone, true);
+
+  const summary = summaryWithCarriedErrors(mission.getSummary(), carried);
+  assert.deepEqual(summary.errors, { equationSetup: 5, skipped: 1 });
+  // Rodič vidí, ČEHO se dítě dopouštělo, hvězdy pořád jednu chybu za příklad.
+  assert.equal(summary.mistakes, 1);
+});
+
+test('přeskočení v krokovém režimu nezahodí krokové chyby', () => {
+  const mission = createMission({
+    id: 'hoth-1',
+    planetId: 'hoth',
+    crystalColor: 'modrý',
+    topic: 'equations',
+    exerciseCount: 1,
+    startDifficulty: 2,
+    seed: 5,
+    stepMode: true,
+  });
+  const session = createStepSession(mission.currentExercise);
+  assert.equal(session.isActive, true);
+  const bad = session.submitOperation({ kind: 'add', operand: { n: 1, d: 1 } });
+  assert.equal(bad.status, 'noProgress');
+
+  const carried = { ...session.getOutcome().errors };
+  mission.skip();
+  const summary = summaryWithCarriedErrors(mission.getSummary(), carried);
+  assert.deepEqual(summary.errors, { strategy: 1, skipped: 1 });
+  assert.equal(summary.mistakes, 1);
+});
+
+test('2 chyby v rovnici + 3 chyby v krocích = jedna chyba za příklad, všechny druhy do statistik', () => {
+  const mission = wordMission();
+  const exercise = mission.currentExercise;
+  const session = createStepSession(exercise);
+
+  const wrongTokens = [...sideTokens({ x: { n: 1, d: 1 }, c: { n: 1, d: 1 } }), T.eq, T.num(99)];
+  session.recordEquationResult(parseEquation(wrongTokens, exercise.equation));
+  session.recordEquationResult(parseEquation(wrongTokens, exercise.equation));
+  session.recordEquationResult(parseEquation(canonicalTokens(exercise), exercise.equation));
+  for (let i = 0; i < 3; i++) {
+    const bad = session.equationSession.submitOperation({ kind: 'add', operand: { n: 1, d: 1 } });
+    assert.equal(bad.status, 'noProgress');
+  }
+
+  const outcome = session.getOutcome();
+  assert.equal(outcome.mistakes, 5);
+  assert.deepEqual(outcome.errors, { equationSetup: 2, strategy: 3 });
+
+  const before = mission.progress.current;
+  mission.recordStepResult(outcome);
+  // Jeden záznam pro adaptivitu = jeden posun na další příklad.
+  assert.equal(mission.progress.current, before + 1);
+
+  const summary = mission.getSummary();
+  assert.equal(summary.mistakes, 1, 'hvězdy počítají nejvýš jednu chybu za příklad');
+  assert.equal(summary.firstTryCount, 0);
+  assert.equal(summary.solved, 1);
+  assert.deepEqual(summary.errors, { equationSetup: 2, strategy: 3 });
 });

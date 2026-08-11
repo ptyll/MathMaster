@@ -21,9 +21,15 @@
  *
  * Zlomek se zadává jako v UCV-INPUT-002: čitatel, zlomková čára, jmenovatel.
  * Klávesa '−' funguje na začátku strany (a za otevřenou závorkou) jako
- * unární mínus. Hotovo je zablokované, dokud není na obou stranách aspoň
- * jeden člen, rovnice neobsahuje x ('Rovnice musí obsahovat x') nebo je
- * rozpracovaný zlomek bez jmenovatele.
+ * unární mínus.
+ *
+ * Hotovo pouští stejný stav jako dlaždicový builder (js/ui/tileBuilderModel.js
+ * - oba jsou dle DEC-015 zaměnitelné, takže musí i stejně gate-ovat): obě
+ * strany neprázdné, každá končí hodnotou a má vyvážené závorky. Navíc tomuto
+ * zápisu vlastní podmínky - rovnice musí obsahovat x a nesmí v ní zůstat
+ * rozpracovaný zlomek bez jmenovatele. Nedopsaný výraz ('x = 2 +') se tak
+ * k parseru vůbec nedostane a hráč místo hlášky 'nerozumím' vidí konkrétní,
+ * co dopsat.
  *
  * Výstupem je seznam tokenů přesně dle kontraktu js/content/equationParse.js
  * - jediným konzumentem je parseEquation(). 'x/4' se přeloží na
@@ -37,6 +43,11 @@ export const MAX_NUM_DIGITS = 4;
 export const HINT_NO_X = 'Rovnice musí obsahovat x';
 const HINT_INCOMPLETE_FRACTION = 'Dopiš jmenovatele zlomku.';
 const HINT_EMPTY_SIDE = 'Na obou stranách rovnice musí něco být.';
+// Stejné texty jako v js/ui/tileBuilderModel.js - hráč přechází mezi buildery
+// s obtížností úlohy a zablokované Hotovo mu má říkat totéž.
+const HINT_UNCLOSED_PAREN = 'Zavři závorku - ke každé otevřené patří zavřená.';
+const HINT_UNFINISHED = 'Rovnice není dopsaná - za znaménkem ještě něco chybí.';
+const NOTE_QUADRATIC = 'Dvě x se nesmí násobit - mezi ně patří + nebo −.';
 
 /** Buňka, za kterou může následovat znaménko nebo zavřená závorka. */
 const isValueEnd = (cell) =>
@@ -44,22 +55,139 @@ const isValueEnd = (cell) =>
   (cell.kind === 'x' || cell.kind === 'num' || cell.kind === 'rparen') &&
   cell.d !== ''; // rozpracovaná zlomková čára hodnotu ještě neuzavírá
 
+/**
+ * Rozdělí buňky jedné strany na top-level členy (dělítko + a − mimo závorky).
+ * Nedopsaná závorka (kontrola běží i uprostřed psaní) drží zbytek strany
+ * v sobě, takže se v ní nic nerozdělí - přesně jak to čte parser.
+ */
+function splitTerms(cells) {
+  const terms = [];
+  let current = [];
+  let depth = 0;
+  for (const cell of cells) {
+    if (depth === 0 && cell.kind === 'op' && (cell.op === '+' || cell.op === '-')) {
+      terms.push(current);
+      current = [];
+      continue;
+    }
+    current.push(cell);
+    if (cell.kind === 'lparen') {
+      depth += 1;
+    } else if (cell.kind === 'rparen') {
+      depth -= 1;
+    }
+  }
+  terms.push(current);
+  return terms;
+}
+
+/** Rozdělí člen na činitele - dělí je '·' i prosté položení vedle sebe (2x, 2(x+1)). */
+function splitFactors(term) {
+  const factors = [];
+  let current = [];
+  let depth = 0;
+  const endsFactor = () => {
+    const tail = current[current.length - 1];
+    return tail && (tail.kind === 'x' || tail.kind === 'num' || tail.kind === 'rparen');
+  };
+  for (const cell of term) {
+    if (depth === 0) {
+      if (cell.kind === 'op') {
+        // '·' mezi činiteli; unární znaménko na začátku členu žádný neuzavírá.
+        if (current.length > 0) {
+          factors.push(current);
+          current = [];
+        }
+        continue;
+      }
+      if (endsFactor()) {
+        factors.push(current);
+        current = [];
+      }
+    }
+    current.push(cell);
+    if (cell.kind === 'lparen') {
+      depth += 1;
+    } else if (cell.kind === 'rparen') {
+      depth -= 1;
+    }
+  }
+  if (current.length > 0) {
+    factors.push(current);
+  }
+  return factors;
+}
+
+/**
+ * Násobí se v některém členu dvě x? ('x · x', 'x · (x + 1)', '2(x+1)(x+1)')
+ * Parser by z toho udělal kvadratickou rovnici, kterou krokový režim neumí -
+ * a dítě ji psát nechtělo. Hlídá se rekurzivně i uvnitř závorek; '(x + x)'
+ * je naopak v pořádku, sčítání činitele nezdvojuje.
+ * Stejné pravidlo má i js/ui/tileBuilderModel.js (jiný tvar buněk, shodná
+ * logika) - oba buildery musí zakázat totéž.
+ */
+function hasQuadraticTerm(cells) {
+  for (const term of splitTerms(cells)) {
+    let xFactors = 0;
+    for (const factor of splitFactors(term)) {
+      if (factor.some((c) => c.kind === 'x')) {
+        xFactors += 1;
+      }
+      if (factor[0].kind === 'lparen') {
+        const end = factor[factor.length - 1].kind === 'rparen' ? factor.length - 1 : factor.length;
+        if (hasQuadraticTerm(factor.slice(1, end))) {
+          return true;
+        }
+      }
+    }
+    if (xFactors >= 2) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function createFreeEquationModel() {
   const cells = [];
 
   const last = () => cells[cells.length - 1] ?? null;
   const eqUsed = () => cells.some((c) => c.kind === 'eq');
 
-  /** Buňky aktuální strany (za posledním rovnítkem, nebo celý zápis). */
-  const currentSide = () => {
-    const eqIndex = cells.findLastIndex((c) => c.kind === 'eq');
-    return eqIndex === -1 ? cells : cells.slice(eqIndex + 1);
+  /**
+   * Pozice rovnítka, nebo -1. Ručním cyklem, ne findLastIndex: ten je ES2023
+   * a projekt běží bez build kroku - na starším tabletu (Chrome < 97,
+   * Safari < 15.4) by celá obrazovka spadla na neznámé metodě.
+   */
+  const eqIndex = () => {
+    for (let i = cells.length - 1; i >= 0; i -= 1) {
+      if (cells[i].kind === 'eq') {
+        return i;
+      }
+    }
+    return -1;
   };
 
+  /** Buňky aktuální strany (za rovnítkem, nebo celý zápis, když ještě není). */
+  const currentSide = () => {
+    const index = eqIndex();
+    return index === -1 ? cells.slice() : cells.slice(index + 1);
+  };
+
+  /** Obě strany zvlášť - rovnítko je nejvýš jedno, takže dělí zápis napůl. */
+  const sides = () => {
+    const index = eqIndex();
+    return index === -1
+      ? { left: cells.slice(), right: [] }
+      : { left: cells.slice(0, index), right: cells.slice(index + 1) };
+  };
+
+  /** Kolik závorek na dané straně čeká na zavření. */
+  const openParensIn = (sideCells) =>
+    sideCells.filter((c) => c.kind === 'lparen').length -
+    sideCells.filter((c) => c.kind === 'rparen').length;
+
   /** Kolik závorek na AKTUÁLNÍ straně čeká na zavření. */
-  const openParens = () =>
-    currentSide().filter((c) => c.kind === 'lparen').length -
-    currentSide().filter((c) => c.kind === 'rparen').length;
+  const openParens = () => openParensIn(currentSide());
 
   const blocked = (note) => ({ status: 'blocked', note });
   const added = { status: 'added' };
@@ -108,6 +236,12 @@ export function createFreeEquationModel() {
     }
     if (cell && cell.kind === 'num' && cell.d === '') {
       return blocked('Dopiš jmenovatele, pak teprve pokračuj.');
+    }
+    // 'x · x' i 'x · (x + 1)' by byla kvadratická rovnice. Blokujeme hned při
+    // stisku, ne až u Hotova: dítě pochopí 'tohle nejde' u klávesy, na kterou
+    // právě sáhlo, líp než u zšedlého tlačítka o pár znaků později.
+    if (hasQuadraticTerm([...currentSide(), { kind: 'x' }])) {
+      return blocked(NOTE_QUADRATIC);
     }
     cells.push({ kind: 'x' });
     return added;
@@ -186,7 +320,14 @@ export function createFreeEquationModel() {
 
   /**
    * Rovnítko. Klávesa '=' se po prvním použití do konce zápisu vypne -
-   * dvě rovnítka za sebou nikdy nevzniknou. Levá strana nesmí být prázdná.
+   * dvě rovnítka za sebou nikdy nevzniknou.
+   *
+   * Rovnítko smí přijít jen za DOKONČENOU levou stranou. Backspace maže vždy
+   * jen poslední znak, takže do levé strany se hráč po napsání '=' už nevrátí:
+   * kdyby '=' prošlo za '2(x + 1' nebo za 'x +', vznikla by slepá ulička, ze
+   * které vede jen mazání celého zbytku zápisu - a k tomu ještě protichůdné
+   * hlášky (Hotovo hlásí chybějící závorku, klávesa ')' zároveň 'nejdřív
+   * závorku otevři', protože ta otevřená zůstala na levé straně).
    */
   function pressEq() {
     if (eqUsed()) {
@@ -194,6 +335,16 @@ export function createFreeEquationModel() {
     }
     if (cells.length === 0) {
       return blocked('Nejdřív napiš levou stranu rovnice.');
+    }
+    if (openParens() > 0) {
+      return blocked('Nejdřív zavři závorku, teprve pak přijde rovnítko.');
+    }
+    const cell = last();
+    if (cell && (cell.kind === 'num' || cell.kind === 'x') && cell.d === '') {
+      return blocked('Dopiš jmenovatele zlomku, teprve pak přijde rovnítko.');
+    }
+    if (!isValueEnd(cell)) {
+      return blocked('Rovnítko patří až za číslo, x nebo závorku.');
     }
     cells.push({ kind: 'eq' });
     return added;
@@ -229,14 +380,30 @@ export function createFreeEquationModel() {
 
   /**
    * Důvod, proč Hotovo (ještě) nejde odeslat, nebo null když je zápis
-   * odeslatelný. Texty se ukazují u zablokovaného tlačítka Hotovo.
+   * odeslatelný. Texty se ukazují u zablokovaného tlačítka Hotovo, takže
+   * musí vždy říct KONKRÉTNĚ, co dopsat - nikdy neprozradí správnou rovnici.
+   *
+   * Gate je schválně stejně přísný jako u dlaždic (js/ui/tileBuilderModel.js):
+   * obě strany neprázdné, každá končí hodnotou a má vyvážené závorky. Bez
+   * toho by 'x = 2 +' nebo 'x + 7 = 2(3' došly až k parseru a hráč by dostal
+   * jen 'tomu zápisu nerozumím'. Kvadratický zápis kontrolovat nemusíme -
+   * ten blokuje už pressX a backspace maže jen z konce, takže nevznikne.
    */
   function submitHint() {
     if (cells.some((c) => (c.kind === 'num' || c.kind === 'x') && c.d === '')) {
       return HINT_INCOMPLETE_FRACTION;
     }
-    if (!eqUsed() || currentSide().length === 0) {
+    const { left, right } = sides();
+    if (!eqUsed() || left.length === 0 || right.length === 0) {
       return HINT_EMPTY_SIDE;
+    }
+    for (const sideCells of [left, right]) {
+      if (openParensIn(sideCells) > 0) {
+        return HINT_UNCLOSED_PAREN;
+      }
+      if (!isValueEnd(sideCells[sideCells.length - 1])) {
+        return HINT_UNFINISHED;
+      }
     }
     if (!cells.some((c) => c.kind === 'x')) {
       return HINT_NO_X;
@@ -255,6 +422,13 @@ export function createFreeEquationModel() {
     for (const cell of cells) {
       switch (cell.kind) {
         case 'num':
+          // Nula ve jmenovateli není platný zlomkový token (parser by ho
+          // odmítl jako neznámý), ale je to platné dělení nulou - pošleme ho
+          // jako '3 / 0', ať hráč dostane stejné 'Nulou se nedělí.' jako u x/0.
+          if (cell.d !== undefined && cell.d !== '' && Number(cell.d) === 0) {
+            tokens.push({ kind: 'num', n: Number(cell.n) }, { kind: 'op', op: '/' }, { kind: 'num', n: 0 });
+            break;
+          }
           tokens.push({ kind: 'num', n: Number(cell.n), ...(cell.d ? { d: Number(cell.d) } : {}) });
           break;
         case 'x':
@@ -286,10 +460,16 @@ export function createFreeEquationModel() {
           }
           text += 'x' + (cell.d !== undefined ? `/${cell.d}` : '');
           break;
-        case 'op':
-          // Unární znaménko na začátku strany bez mezery před sebou ('− 3').
-          text += text === '' ? SYMBOLS[cell.op].trimStart() : SYMBOLS[cell.op];
+        case 'op': {
+          // Unární znaménko (začátek zápisu, začátek pravé strany, hned za
+          // otevřenou závorkou) se lepí k operandu: '−3', 'x = −5',
+          // '2(−x + 4)'. Rozhoduje předchozí buňka, ne délka celého zápisu -
+          // podle té by za rovnítkem vznikla dvojitá mezera.
+          const prev = index > 0 ? cells[index - 1] : null;
+          const unary = prev === null || prev.kind === 'eq' || prev.kind === 'lparen';
+          text += unary ? SYMBOLS[cell.op].trim() : SYMBOLS[cell.op];
           break;
+        }
         case 'eq':
           text += SYMBOLS.eq;
           break;

@@ -12,9 +12,10 @@
 import { createAnswerInput } from './answerInput.js';
 import { createBalanceScale } from './balanceScale.js';
 import { createNumberLine, createFractionBar } from './fractionVisuals.js';
-import { effectiveX, effectiveC } from '../content/solver.js';
+import { effectiveX, effectiveC, needsCombine } from '../content/solver.js';
 
 const VIZ_NOTE_PENDING = 'Váha ukazuje stav před tímhle krokem.';
+const VIZ_NOTE_UNCOMBINED = 'Nejdřív sečti stejné členy, pak ti váhu ukážu.';
 
 const OPERATIONS = [
   { kind: 'sub', label: '−', aria: 'Odečti od obou stran' },
@@ -92,6 +93,19 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
   expandBtn.textContent = 'Roznásob závorku';
   expandBtn.hidden = true;
 
+  // Sečtení stejných členů (UCN-STEP-003) je stejně jako roznásobení operace
+  // bez operandu, ale týká se JEDNÉ strany. Když je co sčítat na obou, dostane
+  // každá vlastní tlačítko: druhá úroveň volby ('a kterou stranu?') by dítěti
+  // přidala krok navíc i nový režim, kdežto takhle je celá nabídka vidět
+  // najednou a hotová jedním klepnutím. Stranu popisek jmenuje jen tehdy,
+  // když je z čeho vybírat - u jediné možnosti by 'vlevo' byl jen šum
+  // (přístupný název ji uvádí vždy, čtečka kontext obrazovky nemá).
+  const combineRow = document.createElement('div');
+  combineRow.className = 'step-combine';
+  combineRow.setAttribute('role', 'group');
+  combineRow.setAttribute('aria-label', 'Sečti stejné členy');
+  combineRow.hidden = true;
+
   // --- Hostitel vstupu hodnoty ---
   const inputHost = document.createElement('div');
   inputHost.className = 'step-value-input';
@@ -121,7 +135,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
 
   const rightCol = document.createElement('div');
   rightCol.className = 'step-col step-col-controls';
-  rightCol.append(promptEl, feedbackEl, opRow, expandBtn, termToggle, inputHost, backBtn);
+  rightCol.append(promptEl, feedbackEl, opRow, expandBtn, combineRow, termToggle, inputHost, backBtn);
 
   root.append(leftCol, rightCol);
   container.appendChild(root);
@@ -190,6 +204,16 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
     }
     vizHost.innerHTML = '';
     const state = session.equationState;
+    if (needsCombine(state.left) || needsCombine(state.right)) {
+      // Nesčtenou stranu ('x - x/2 - x/4') váha nakreslit neumí: parseSide z ní
+      // přečte první člen a zbytek pověsí nad misku jako 'konstantu', takže by
+      // obrázek tvrdil něco jiného, než co je v rovnici. Radši nic a české
+      // vysvětlení - po sečtení členů se váha vrátí sama.
+      vizHost.hidden = true;
+      vizNote.hidden = false;
+      vizNote.textContent = VIZ_NOTE_UNCOMBINED;
+      return;
+    }
     const lx = effectiveX(state.left);
     const lc = effectiveC(state.left);
     const rx = effectiveX(state.right);
@@ -233,6 +257,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
     backBtn.hidden = !session.canUndo;
     backBtn.textContent = '↩ Zpět o krok';
 
+    renderCombineButtons();
     renderTermToggle();
     destroyInput();
     inputHost.innerHTML = '';
@@ -249,6 +274,38 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
       confirmLabel: 'Proveď na obou stranách',
       onSubmit: (result) => handleOperand(result.value),
     });
+  }
+
+  /**
+   * Tlačítka pro sečtení členů - jedno pro každou stranu, kde je co sčítat.
+   * Překreslují se s každým krokem: sečtená strana z nabídky zmizí a po
+   * úpravě, která členy přidá (třeba '- 3'), se zase objeví.
+   */
+  function renderCombineButtons() {
+    // Zlomková relace getter nemá - tam se žádné členy nesčítají.
+    const sides = session.combinableSides ?? [];
+    combineRow.innerHTML = '';
+    combineRow.hidden = sides.length === 0;
+    for (const side of sides) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-combine';
+      btn.textContent =
+        sides.length > 1
+          ? `Sečti členy ${side === 'left' ? 'vlevo' : 'vpravo'}`
+          : 'Sečti stejné členy';
+      btn.setAttribute(
+        'aria-label',
+        `Sečti stejné členy na ${side === 'left' ? 'levé' : 'pravé'} straně`
+      );
+      btn.addEventListener('click', () => {
+        selectedKind = null;
+        term = 'const';
+        updateOperationSelection();
+        applyResult(session.submitOperation({ kind: 'combine', side }));
+      });
+      combineRow.appendChild(btn);
+    }
   }
 
   function renderTermToggle() {
@@ -282,6 +339,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
     opRow.hidden = true;
     termToggle.hidden = true;
     expandBtn.hidden = true;
+    combineRow.hidden = true;
     backBtn.hidden = false;
     backBtn.textContent = '✕ Zvolit jinou operaci';
 
@@ -299,6 +357,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
     stateEl.textContent = session.equationText;
     opChip.hidden = true;
     expandBtn.hidden = true;
+    combineRow.hidden = true;
     promptEl.textContent = session.question ? session.question.prompt : '';
     opRow.hidden = true;
     termToggle.hidden = true;
@@ -325,6 +384,7 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
       termToggle.hidden = true;
       opChip.hidden = true;
       expandBtn.hidden = true;
+      combineRow.hidden = true;
       backBtn.hidden = true;
       destroyInput();
       inputHost.innerHTML = '';

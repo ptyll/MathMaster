@@ -448,12 +448,16 @@ p {
   }
 }
 
-/* Omezený pohyb: žádné animace, hvězdy vidět hned */
+/* Omezený pohyb: žádné animace, hvězdy vidět hned.
+   Patří sem i zatřesení po špatné validaci (dlaždice, volný zápis) -
+   sdílí klíčové snímky s avatarem, takže musí mlčet stejně jako on. */
 @media (prefers-reduced-motion: reduce) {
   .eval-star.earned,
   .crystal,
   .avatar-correct,
-  .avatar-wrong {
+  .avatar-wrong,
+  .tile-boxes.is-shaking,
+  .free-eq-display.is-shaking {
     animation: none;
   }
 }
@@ -1507,13 +1511,24 @@ p {
   color: var(--color-accent);
 }
 
-/* Roznásobení závorky - operace bez operandu, proto vlastní tlačítko */
-.btn-expand {
+/* Roznásobení závorky a sečtení stejných členů - operace bez operandu,
+   proto vlastní tlačítka mimo řádek se symboly. Stejný vzhled, protože
+   se hráči chovají stejně: klepnutí je rovnou provede. */
+.btn-expand,
+.btn-combine {
   min-height: var(--touch-target);
   font-size: 1rem;
   background: var(--color-bg-panel);
   color: var(--color-accent);
   border: 2px solid var(--color-accent);
+}
+
+/* Sečitatelné strany vedle sebe (na úzké obrazovce pod sebou) */
+.step-combine {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
 }
 
 /* --- Dlaždicové skládání rovnice (UCV-INPUT-003) --- */
@@ -1619,8 +1634,16 @@ p {
 
 .tile-actions {
   display: flex;
+  align-items: center;
   justify-content: center;
   gap: 0.75rem;
+}
+
+/* Nápis u zablokovaného Hotovo ('Rovnice musí obsahovat x') */
+.tile-submit-hint {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-dim);
 }
 
 .tile-submit:disabled {

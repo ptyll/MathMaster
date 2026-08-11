@@ -230,7 +230,12 @@ test('TDD-STEP-004-F: neúplné zápisy jsou unparseable s nápovědou, ne chybo
     [[T.num(3), T.op('+'), T.num(5), T.eq, T.num(8)], 'rovnice bez x'],
     [[T.x, T.op('*'), T.x, T.eq, T.num(9)], 'x · x není lineární'],
     [[T.x, T.op('/'), T.x, T.eq, T.num(1)], 'dělení x-členem'],
-    [{ kind: 'emoji', value: '🚀' }, 'neznámý token'],
+    // Pozor na vnější pole: bez něj by se místo seznamu tokenů předal objekt
+    // a testovala by se větev !Array.isArray, ne validace tokenu.
+    [[{ kind: 'emoji', value: '🚀' }], 'neznámý token'],
+    [[T.x, T.op('^'), T.num(2), T.eq, T.num(9)], 'neznámá operace'],
+    [[T.x, T.eq, { kind: 'num', n: 1.5 }], 'necelé číslo v tokenu'],
+    [[T.x, T.eq, { kind: 'num', n: 1, d: 0 }], 'nulový jmenovatel v tokenu'],
   ];
   for (const [tokens, label] of cases) {
     const r = parseEquation(tokens, { left: expr(1, 1, 7, 1), right: expr(0, 1, 25, 1) });
@@ -249,6 +254,19 @@ test('TDD-STEP-004-F: neúplné zápisy jsou unparseable s nápovědou, ne chybo
   // Psané x, které se vynulovalo (x − x = 0), nehlásí "chybí neznámá x".
   assert.match(parseEquation([T.x, T.op('-'), T.x, T.eq, T.num(0)]).note, /vynulovala/);
   assert.match(parseEquation([T.x, T.op('/'), T.num(0), T.eq, T.num(5)]).note, /Nulou se nedělí/);
+  // Nelineární a nedopsaný zápis mají vlastní hlášky, ne jen společný status.
+  assert.match(parseEquation([T.x, T.op('*'), T.x, T.eq, T.num(9)]).note, /zamotanou/);
+  assert.match(parseEquation([T.x, T.op('/'), T.x, T.eq, T.num(1)]).note, /zamotanou/);
+  assert.match(parseEquation([T.x, T.op('+'), T.eq, T.num(5)]).note, /nedopsaná/);
+  assert.match(parseEquation([T.num(2), T.lp, T.x, T.op('+'), T.num(1), T.eq, T.num(8)]).note, /závorka/);
+  // Neznámý token (emoji z rozbitého vstupu) hlásí, že zápisu nerozumíme -
+  // tahle větev validateToken jinak nemá pokrytí.
+  assert.match(
+    parseEquation([{ kind: 'emoji', value: '🚀' }, T.eq, T.num(5)]).note,
+    /Tomu zápisu nerozumím/
+  );
+  // Rozbitý seznam tokenů (ne pole) je prázdný vstup, ne pád.
+  assert.equal(parseEquation({ kind: 'emoji', value: '🚀' }).status, 'unparseable');
 });
 
 // --- G: špatně sestavená rovnice ---------------------------------------------

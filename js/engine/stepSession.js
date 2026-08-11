@@ -26,7 +26,7 @@ import {
   describeOperation,
   cloneState,
 } from '../content/stepCheck.js';
-import { formatExpr, isFactored, needsCombine } from '../content/solver.js';
+import { formatExpr, formatTerms, isFactored, needsCombine } from '../content/solver.js';
 import { EQUATION_SETUP_ERROR } from '../content/equationParse.js';
 import {
   makeFraction,
@@ -39,6 +39,11 @@ import {
 
 /** Kolik chyb u jednoho kroku spustí automatické vysvětlení. */
 const MISTAKES_BEFORE_HELP = 2;
+/**
+ * Hláška na zápis, který je rovnou výsledek ('x = 18'). Nesmí prozradit
+ * správnou rovnici ANI to, jestli hráč uhodl správné číslo.
+ */
+const NOTE_ALREADY_SOLVED = 'To je už výsledek - napiš rovnici, která popisuje zadání.';
 /** Kolik kroků bez pokroku za sebou zvýrazní nápovědu. */
 const NO_PROGRESS_BEFORE_HINT = 3;
 
@@ -57,6 +62,94 @@ export function formatEquation(state) {
 /** Stejná velikost, jiné znaménko - typická chyba se záporným číslem. */
 function sameMagnitude(a, b) {
   return a.n !== 0 && Math.abs(a.n) * b.d === Math.abs(b.n) * a.d && a.n !== b.n;
+}
+
+/* --- Sloty k dopočtu: sečtená strana i jednotlivé nesčtené členy ----------- */
+
+/** Slot jednoho členu nesčtené strany: 'left.terms.0.x'. */
+const TERM_SLOT = /^(left|right)\.terms\.(\d+)\.(x|c)$/;
+
+/**
+ * Části rovnice, které má hráč po zvoleném kroku dopočítat.
+ *
+ * Nad stranou s NESČTENÝMI členy se ptáme na jednotlivé členy, ne na jejich
+ * součet (DEC-013): po '× 12' se z 'x - x/2 - x/4' stane '12x - 6x - 3x' a
+ * otázka 'Kolik x zůstane na levé straně?' by chtěla číslo 3, které v rovnici
+ * vůbec nestojí - hráč by ho spočítal a pak marně hledal na obrazovce.
+ * Ptát se na součet smíme až u operace combine: tam si sečtení hráč zvolil
+ * sám (DEC-010) a strana se sečtená i vykreslí.
+ *
+ * Nabídku operací to nijak neomezuje - pořadí kroků se nevynucuje
+ * (UCN-STEP-003-T7), jen se ptáme na to, co bude po kroku opravdu napsané.
+ */
+function askedSlots(prev, next) {
+  const plain = askedParts(prev, next);
+  const slots = [];
+  for (const side of ['left', 'right']) {
+    if (Array.isArray(prev[side].terms) && Array.isArray(next[side].terms)) {
+      slots.push(...askedTermSlots(prev[side], next[side], side));
+    } else {
+      slots.push(...plain.filter((slot) => slot.startsWith(`${side}.`)));
+    }
+  }
+  return slots;
+}
+
+/**
+ * Členy, které se krokem změnily a mají smysl jako otázka.
+ * Člen, který operace teprve přidala (add/sub připisuje operand jako další
+ * člen), otázka není - jeho hodnotu hráč právě sám zadal.
+ */
+function askedTermSlots(prevSide, nextSide, sideName) {
+  const slots = [];
+  nextSide.terms.forEach((term, i) => {
+    const before = prevSide.terms[i];
+    if (!before) {
+      return;
+    }
+    for (const part of ['x', 'c']) {
+      const after = term[part];
+      // Nezměněná ani vynulovaná část není otázka - stejné pravidlo jako
+      // askedParts nad sečtenou stranou.
+      if ((after.n === before[part].n && after.d === before[part].d) || after.n === 0) {
+        continue;
+      }
+      slots.push(`${sideName}.terms.${i}.${part}`);
+    }
+  });
+  return slots;
+}
+
+/** Očekávaná hodnota slotu - vedle 'left.x' rozumí i členům 'left.terms.0.x'. */
+function slotValue(state, slot) {
+  const m = TERM_SLOT.exec(slot);
+  return m ? { ...state[m[1]].terms[Number(m[2])][m[3]] } : partValue(state, slot);
+}
+
+/**
+ * Otázka na slot. U členu ho jmenuje ('Kolik x vyjde z členu -x/2?') - v
+ * náhledu jsou všechny nedoplněné členy stejné otazníky a bez pojmenování by
+ * hráč nevěděl, na který z nich se ptáme. Jméno bere z PŘEDCHOZÍHO stavu:
+ * ptáme se na výsledek úpravy členu, který hráč vidí v rovnici nad otázkou.
+ */
+function slotQuestion(slot, prevState) {
+  const m = TERM_SLOT.exec(slot);
+  if (!m) {
+    return partQuestion(slot);
+  }
+  const source = formatTerms([prevState[m[1]].terms[Number(m[2])]]);
+  return m[3] === 'x' ? `Kolik x vyjde z členu ${source}?` : `Jaké číslo vyjde z členu ${source}?`;
+}
+
+/** Zamaskuje hodnotu slotu ve snímku pro náhled (null = hráč teprve doplní). */
+function maskSlot(shown, slot) {
+  const m = TERM_SLOT.exec(slot);
+  if (m) {
+    shown[m[1]].terms[Number(m[2])][m[3]] = null;
+    return;
+  }
+  const [side, part] = slot.split('.');
+  shown[side][part] = null;
 }
 
 /**
@@ -132,11 +225,25 @@ function createWordProblemSession(exercise) {
      * unparseable = nedopsaný zápis -> jen hláška u builderu, bez chyby
      * (nápověda, ne statistika, dle kontraktu parseEquation).
      * @param {object} result výsledek parseEquation(tokens, expected)
-     * @returns {{advanced: boolean}} true = rovnice uznána, jedeme do kroků
+     * @returns {{advanced: boolean, note?: string}} advanced true = rovnice
+     *   uznána, jedeme do kroků; note = hláška pro hráče u builderu
      */
     recordEquationResult(result) {
       if (inner) {
         return { advanced: true };
+      }
+      // Hráč přeskočil rovnici a napsal rovnou výsledek ('x = 18', '18 = x').
+      // Do kroků ho pustit nesmíme: relace by startovala nad vyřešeným tvarem,
+      // kde ji uzavře jedině 'vynásob obě strany 1' a každý didakticky rozumný
+      // pokus skončí jako noProgress, tedy chyba druhu 'strategy'.
+      // Odmítáme JEŠTĚ PŘED rozhodnutím match/mismatch - jinak by dvojice
+      // 'x = 18' (jinak přijato) a 'x = 19' (mismatch) hráči prozradila, jestli
+      // uhodl výsledek. Chybu nepočítáme: tohle není špatně sestavená rovnice
+      // (equationSetup), ale přeskočený krok - stejně jako 'unparseable' je to
+      // nápověda, ne statistika.
+      const start = result.multiTerm ?? result.canonical;
+      if (start && isSolved(start)) {
+        return { advanced: false, note: NOTE_ALREADY_SOLVED };
       }
       if (result.status === 'match' || result.status === 'ok') {
         // Start z HRÁČOVY rovnice: nesčtený multi-term tvar, když je na
@@ -212,8 +319,7 @@ function createEquationSession(exercise) {
       }
       const shown = cloneState(pending.next);
       for (let i = pending.slotIndex; i < pending.slots.length; i++) {
-        const [side, part] = pending.slots[i].split('.');
-        shown[side][part] = null;
+        maskSlot(shown, pending.slots[i]);
       }
       return {
         left: formatSideWithBlanks(shown.left),
@@ -239,7 +345,7 @@ function createEquationSession(exercise) {
       // Vždy 'int' s dostupným přepínačem na zlomek - kdybychom režim
       // odvodili z očekávané hodnoty, prozradíme tím tvar odpovědi.
       return {
-        prompt: partQuestion(slot),
+        prompt: slotQuestion(slot, state),
         mode: 'int',
       };
     },
@@ -296,8 +402,9 @@ function createEquationSession(exercise) {
 
       noProgressStreak = 0;
       // Operace 'combine' nese vlastní sloty (dopočet sečteného koeficientu);
-      // ostatní operace se ptají na hodnoty, které se krokem změnily.
-      const slots = applied.slots ?? askedParts(state, applied.next);
+      // ostatní operace se ptají na hodnoty, které se krokem změnily - u
+      // nesčtené strany na jednotlivé členy, ne na jejich součet (askedSlots).
+      const slots = applied.slots ?? askedSlots(state, applied.next);
       pending = { operation, next: applied.next, slots, slotIndex: 0 };
       if (slots.length === 0) {
         // Čistě mechanický krok (např. x/3 = 5 -> x = 15 nemá co počítat).
@@ -316,7 +423,7 @@ function createEquationSession(exercise) {
       }
       const given = valueToFraction(value);
       const slot = pending.slots[pending.slotIndex];
-      const expected = partValue(pending.next, slot);
+      const expected = slotValue(pending.next, slot);
 
       if (given === null || !fractionsEqual(given, expected)) {
         mistakes++;
@@ -378,6 +485,12 @@ function createEquationSession(exercise) {
 
 /** Formátuje stranu rovnice, kde null znamená dosud nedoplněnou hodnotu. */
 function formatSideWithBlanks(side) {
+  // Nesčtená strana se kreslí člen po členu i v náhledu (DEC-013). Render ze
+  // součtů x/c by hráči ukázal '?x = ?' tam, kde po kroku bude stát
+  // '12x - 6x - 3x' - tedy tichou kanonizaci v didaktické ploše.
+  if (Array.isArray(side.terms)) {
+    return formatTermsWithBlanks(side.terms);
+  }
   // Maskovaná strana je vždy už roznásobená: závorka mění jen činitele,
   // a na ten se relace neptá. Proto tu činitele neřešíme.
   if (side.x === null || side.c === null) {
@@ -395,6 +508,29 @@ function formatSideWithBlanks(side) {
     return xPart || (negative ? `-${cPart}` : cPart) || '0';
   }
   return formatExpr(side);
+}
+
+/**
+ * Nesčtené členy s otazníky místo nedoplněných hodnot: '12x - 6x + ?x'.
+ * Neznámý člen se připojuje vždy plusem - znaménko je součást odpovědi
+ * (splést ho je chyba druhu 'sign') a předtištěné mínus by ji prozradilo.
+ * Hotové členy naopak kreslí formatTerms, aby náhled vypadal přesně jako
+ * rovnice, která z kroku vyjde.
+ */
+function formatTermsWithBlanks(terms) {
+  let text = '';
+  for (const term of terms) {
+    const masked = term.x === null || term.c === null;
+    const body = masked ? formatSideWithBlanks({ x: term.x, c: term.c }) : formatTerms([term]);
+    if (!text) {
+      text = body;
+    } else if (!masked && body.startsWith('-')) {
+      text += ` - ${body.slice(1)}`;
+    } else {
+      text += ` + ${body}`;
+    }
+  }
+  return text || '0';
 }
 
 function formatXTerm(x) {

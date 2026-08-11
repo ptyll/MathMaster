@@ -183,9 +183,114 @@ test("UCV-INPUT-004: zápis bez x má Hotovo zablokované s nápisem 'Rovnice mu
 
 test('UCV-INPUT-004: rozpracovaný zlomek bez jmenovatele Hotovo zablokuje', () => {
   const m = createFreeEquationModel();
-  play(m, ['x', '/', '=', '5']);
+  play(m, ['x', '=', '5', '/']);
   assert.equal(m.canSubmit(), false);
   assert.equal(m.submitHint(), 'Dopiš jmenovatele zlomku.');
+
+  // rovnítko za rozpracovaným zlomkem neprojde vůbec (jinak by vznikla
+  // levá strana, kterou už nejde opravit jinak než smazáním všeho za ní)
+  const m2 = createFreeEquationModel();
+  play(m2, ['x', '/']);
+  const eq = m2.pressEq();
+  assert.equal(eq.status, 'blocked');
+  assert.match(eq.note, /jmenovatele/);
+});
+
+test('UCV-INPUT-004: rovnítko za neuzavřenou závorkou neprojde (žádná slepá ulička)', () => {
+  const m = createFreeEquationModel();
+  play(m, ['2', '(', 'x', '+', '1']);
+  const eq = m.pressEq();
+  assert.equal(eq.status, 'blocked', 'závorka musí být zavřená dřív než rovnítko');
+  assert.match(eq.note, /závorku/);
+  assert.equal(m.getDisplayText(), '2(x + 1', 'zápis se stiskem nezměnil');
+
+  // hráč závorku zavře a rovnítko projde - bez mazání čehokoliv
+  play(m, [')', '=', '9']);
+  assert.equal(m.getDisplayText(), '2(x + 1) = 9');
+  assert.equal(m.canSubmit(), true);
+  assert.equal(parseEquation(m.getTokens()).status, 'ok');
+});
+
+test('UCV-INPUT-004: rovnítko patří až za dokončenou levou stranu', () => {
+  const m = createFreeEquationModel();
+  play(m, ['x', '+']);
+  const eq = m.pressEq();
+  assert.equal(eq.status, 'blocked', "'x + = 5' by šlo opravit jen smazáním celé pravé strany");
+  assert.match(eq.note, /Rovnítko patří/);
+
+  play(m, ['7', '=']);
+  assert.equal(m.getState().eqUsed, true);
+});
+
+test('UCV-INPUT-004: Hotovo nepustí nedopsanou stranu ani neuzavřenou závorku', () => {
+  // strana končící znaménkem
+  const m = createFreeEquationModel();
+  play(m, ['x', '=', '2', '+']);
+  assert.equal(m.canSubmit(), false, "'x = 2 +' není dopsané");
+  assert.equal(m.submitHint(), 'Rovnice není dopsaná - za znaménkem ještě něco chybí.');
+  play(m, ['3']);
+  assert.equal(m.canSubmit(), true);
+
+  // neuzavřená závorka na pravé straně
+  const m2 = createFreeEquationModel();
+  play(m2, ['x', '+', '7', '=', '2', '(', '3']);
+  assert.equal(m2.canSubmit(), false);
+  assert.equal(m2.submitHint(), 'Zavři závorku - ke každé otevřené patří zavřená.');
+  play(m2, [')']);
+  assert.equal(m2.canSubmit(), true);
+});
+
+test('UCV-INPUT-004: co Hotovo pustí, to parser přečte (žádné unparseable)', () => {
+  // Dřív tyhle zápisy prošly gate a spadly až na parseru hláškou 'nerozumím'.
+  // (rozpracovaný zlomek 'x = 5/' řeší vlastní test - do tokenů se čára bez
+  // jmenovatele vůbec nedostane, takže by parser četl neúplný zápis jako 'x = 5')
+  const scripts = [
+    ['x', '=', '2', '+'],
+    ['x', '+', '7', '=', '2', '(', '3'],
+    ['3', '+', '5', '=', '8'],
+  ];
+  for (const script of scripts) {
+    const m = createFreeEquationModel();
+    play(m, script);
+    assert.equal(m.canSubmit(), false, `zápis ${script.join(' ')} nesmí projít gate`);
+    assert.equal(parseEquation(m.getTokens()).status, 'unparseable', 'parser by ho stejně odmítl');
+    assert.ok(m.submitHint(), 'hráč musí dostat konkrétní důvod');
+  }
+});
+
+test('UCV-INPUT-004: kvadratický zápis (x · x) model zablokuje hned při stisku', () => {
+  const m = createFreeEquationModel();
+  play(m, ['x', '·']);
+  const blocked = m.pressX();
+  assert.equal(blocked.status, 'blocked');
+  assert.match(blocked.note, /Dvě x se nesmí násobit/);
+
+  // i přes závorky: 2(x + 1)(x + 1)
+  const m2 = createFreeEquationModel();
+  play(m2, ['2', '(', 'x', '+', '1', ')', '·', '(']);
+  assert.equal(m2.pressX().status, 'blocked');
+
+  // lineární zápisy zůstávají povolené
+  const ok = createFreeEquationModel();
+  play(ok, ['2', '·', 'x', '+', '3', '·', 'x', '=', '1', '0']);
+  assert.equal(ok.canSubmit(), true);
+  assert.equal(parseEquation(ok.getTokens()).status, 'ok');
+
+  const paren = createFreeEquationModel();
+  play(paren, ['2', '(', 'x', '+', 'x', ')', '=', '8']);
+  assert.equal(parseEquation(paren.getTokens()).status, 'ok', 'sčítání v závorce kvadratické není');
+});
+
+test('UCV-INPUT-004: dělení nulou dostane stejnou hlášku u zlomku i u x', () => {
+  const m = createFreeEquationModel();
+  play(m, ['3', '/', '0', '+', 'x', '=', '5']);
+  const res = parseEquation(m.getTokens());
+  assert.equal(res.status, 'unparseable');
+  assert.equal(res.note, 'Nulou se nedělí.');
+
+  const m2 = createFreeEquationModel();
+  play(m2, ['x', '/', '0', '=', '5']);
+  assert.equal(parseEquation(m2.getTokens()).note, res.note, 'stejný důvod, stejná hláška');
 });
 
 /* --- Unární minus na začátku strany --- */
@@ -193,7 +298,8 @@ test('UCV-INPUT-004: rozpracovaný zlomek bez jmenovatele Hotovo zablokuje', () 
 test('UCV-INPUT-004: klávesa − na začátku strany funguje jako unární mínus', () => {
   const m = createFreeEquationModel();
   play(m, ['-', '3', '=', 'x']);
-  assert.equal(m.getDisplayText(), '− 3 = x');
+  // Unární mínus se lepí k operandu - '−3', ne '− 3' (binární má mezery).
+  assert.equal(m.getDisplayText(), '−3 = x');
   const res = parseEquation(m.getTokens());
   assert.equal(res.status, 'ok');
   assert.deepEqual(res.canonical.left.c, { n: -3, d: 1 });
@@ -212,6 +318,21 @@ test('UCV-INPUT-004: klávesa − na začátku strany funguje jako unární mín
   const m4 = createFreeEquationModel();
   play(m4, ['x', '+']);
   assert.equal(m4.pressMinus().status, 'blocked');
+});
+
+test('UCV-INPUT-004: unární mínus za rovnítkem a v závorce nedělá dvojitou mezeru', () => {
+  const m = createFreeEquationModel();
+  play(m, ['x', '=', '-', '5']);
+  assert.equal(m.getDisplayText(), 'x = −5', 'za rovnítkem je jen jedna mezera');
+
+  const m2 = createFreeEquationModel();
+  play(m2, ['2', '(', '-', 'x', '+', '4', ')', '=', '1']);
+  assert.equal(m2.getDisplayText(), '2(−x + 4) = 1', 'v závorce se mínus lepí k x');
+
+  // binární mínus mezery ponechává
+  const m3 = createFreeEquationModel();
+  play(m3, ['x', '-', '4', '=', '1']);
+  assert.equal(m3.getDisplayText(), 'x − 4 = 1');
 });
 
 /* --- Zlomek: čitatel / jmenovatel --- */
@@ -308,9 +429,13 @@ test('DEC-013: kroková relace ukazuje v rovnici i historii nesčtené členy', 
   });
   assert.equal(s.equationText, 'x - x/2 - x/4 = 15', 'živá rovnice není tichá kanonizace');
 
-  // operace před sečtením škáluje členy a render je ukáže všechny
+  // Operace před sečtením škáluje členy a render je ukáže všechny. Dopočet
+  // jde PO ČLENECH, ne přes jejich součet - ten v rovnici nikde nestojí.
   s.submitOperation({ kind: 'mul', operand: f(4) });
-  s.submitValue({ kind: 'int', value: 60 });
+  s.submitValue({ kind: 'int', value: 4 });   // x × 4
+  s.submitValue({ kind: 'int', value: -2 });  // -x/2 × 4
+  s.submitValue({ kind: 'int', value: -1 });  // -x/4 × 4
+  s.submitValue({ kind: 'int', value: 60 });  // pravá strana
   assert.equal(s.equationText, '4x - 2x - x = 60');
   assert.equal(s.history[0].equationText, '4x - 2x - x = 60', 'historie vykresluje členy');
 
@@ -337,7 +462,7 @@ test('UCV-INPUT-004: neplatné kombinace model zablokuje hned při stisku', () =
   play(m, ['⌫']);
   assert.equal(m.pressOp('*').status, 'blocked', 'znaménko za znaménkem');
 
-  play(m, ['=']);
+  play(m, ['2', '=']);
   assert.equal(m.pressLparen().status, 'added');
   play(m, ['x']);
   assert.equal(m.pressLparen().status, 'blocked', 'závorka za x');

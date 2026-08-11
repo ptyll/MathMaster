@@ -21,7 +21,11 @@
  *   onSubmit(result, tokens)  zavolá se při každém Hotovo; mise podle
  *                         result.status přejde do krokového režimu
  *                         (start z result.multiTerm ?? result.canonical)
- * }) -> { element, getTokens, destroy }
+ * }) -> { element, getTokens, showNote, destroy }
+ *
+ * showNote(text, tone) nechá misi přepsat hlášku i po 'match' - relace umí
+ * rovnici odmítnout z důvodu, který builder sám nevidí (hráč napsal rovnou
+ * výsledek). Dlaždicový builder má stejnou metodu, oba zůstávají zaměnitelné.
  */
 
 import { createFreeEquationModel } from './freeEquationModel.js';
@@ -222,6 +226,9 @@ export function createFreeEquationInput(container, { problemText, expected, onSu
       '/': () => model.pressFractionBar(),
       '=': () => model.pressEq(),
       x: () => model.pressX(),
+      // Velké X (CapsLock nebo Shift) je pro dítě tatáž klávesa - bez téhle
+      // dvojice by se stisk tiše ztratil, ani hláška by nepřišla.
+      X: () => model.pressX(),
       Backspace: () => model.pressBackspace(),
     };
     if (/^[0-9]$/.test(event.key)) {
@@ -259,6 +266,15 @@ export function createFreeEquationInput(container, { problemText, expected, onSu
   return {
     element: root,
     getTokens: () => model.getTokens(),
+    // Mise umí rovnici odmítnout i po 'match' (např. hráč napsal rovnou
+    // výsledek) - bez tohohle háku by dítě zmáčklo Hotovo a nestalo by se nic.
+    showNote(text, tone = 'wrong') {
+      displayEl.classList.toggle('is-wrong', tone === 'wrong');
+      if (tone === 'wrong') {
+        shake();
+      }
+      setFeedback(text, tone);
+    },
     destroy() {
       document.removeEventListener('keydown', keyboardHandler);
       root.remove();

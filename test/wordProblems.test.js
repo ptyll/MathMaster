@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { generateWordProblem } from '../js/content/wordProblems.js';
-import { evaluateExpr, effectiveX, formatExpr } from '../js/content/solver.js';
+import { evaluateExpr, effectiveX, formatExpr, isFactored } from '../js/content/solver.js';
 import { fractionsEqual, isSimplified, isWhole, makeFraction } from '../js/content/fractions.js';
 
 function answerAsFraction(answer) {
@@ -148,7 +148,8 @@ test('TDD-MATH-007-G: distraktory u celočíselných odpovědí - kladné, bez s
         assert.deepEqual(p.distractors, [], `zlomková odpověď nemá distraktory: ${p.text}`);
         continue;
       }
-      assert.ok(p.distractors.length >= 2, `málo distraktorů: ${p.text}`);
+      // Nabídka je vždy ze 4 možností: správná odpověď + právě 3 distraktory.
+      assert.equal(p.distractors.length, 3, `špatný počet distraktorů (${p.distractors}): ${p.text}`);
       assert.ok(!p.distractors.includes(p.answer.value), `distraktor = odpověď: ${p.text}`);
       assert.ok(p.distractors.every((d) => d > 0 && Number.isInteger(d)), `distraktory musí být kladné celé: ${p.text}`);
       assert.equal(new Set(p.distractors).size, p.distractors.length, `duplicitní distraktory: ${p.text}`);
@@ -241,4 +242,127 @@ test('TDD-MATH-007-L: řešitelský hint machinePlusTimes neprozradí rovnici', 
     assert.ok(!p.hint.includes(formatExpr(p.equation.left)), `hint obsahuje levou stranu rovnice: ${p.hint}`);
   }
   assert.ok(seen > 0, 've 300 seedech se má machinePlusTimes objevit');
+});
+
+// Formy obtížnosti 2, kde je levá strana rovnice DOSLOVA překlad jediné fráze
+// ze zadání ('k němu přičtu 8' -> x + 8). Přesně tenhle překlad spec
+// UCV-MISSION-003 po vrstvě 2 chce, takže shoda s formatExpr(left) tu není
+// únik. Místo toho se hlídá pevná šablona, ve které se kromě operandu fráze
+// nesmí objevit žádné jiné číslo (zpětná reference \1 na tentýž operand).
+const PHRASE_IS_WHOLE_LEFT = new Set(['thinkPlus', 'thinkMinus']);
+const PHRASE_ONLY_HINT =
+  /^Hledané číslo je x\. '(?:K němu přičtu|Od něj odečtu) (\d+)' znamená x [+-] \1\.$/;
+
+/**
+ * Je levá strana SESTAVENÁ, tedy spojuje víc než jeden člen? Závorka
+ * s činitelem (a(x + b)) nebo x-člen s konstantou (3x + 5) ano; jednočlenná
+ * strana ((3/4)x, u poloviny renderovaná jako 'x/2') ne - ta je sama o sobě
+ * překladem jedné fráze ('polovinu čísla' je x/2), který vrstva 2 ukázat má.
+ */
+const isComposedLeft = (e) => isFactored(e) || e.c.n !== 0;
+
+/**
+ * Padne hodnota v textu jako samostatné číslo? Číslice ve jmenovateli zlomku
+ * (x/2, 3/4) pravou stranou rovnice nejsou, i když se s ní číselně trefí.
+ */
+function mentionsAsNumber(text, value) {
+  const escaped = value.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+  return new RegExp(`(?<![\\d/])${escaped}(?![\\d/])`).test(text);
+}
+
+test('TDD-MATH-007-M: writeHint překládá frázi, nikdy nesestaví stranu rovnice', () => {
+  const seenForms = new Set();
+  for (let seed = 1; seed <= 400; seed++) {
+    for (const difficulty of [2, 3, 4, 5, 6]) {
+      const p = generateWordProblem(seed, difficulty);
+      seenForms.add(p.form);
+      if (PHRASE_IS_WHOLE_LEFT.has(p.form)) {
+        assert.match(p.writeHint, PHRASE_ONLY_HINT, `${p.form}: vrstva 2 má být jen překlad fráze`);
+        continue;
+      }
+      const left = p.equation.left;
+      const leftText = formatExpr(left);
+      if (isComposedLeft(left)) {
+        assert.ok(
+          !p.writeHint.includes(leftText),
+          `${p.form}: writeHint složil celou levou stranu (${leftText}): ${p.writeHint}`
+        );
+      }
+      if (isFactored(left)) {
+        // U a(x + b) je didaktickou obtížností právě složení závorky ze dvou
+        // frází - vrstva 2 nesmí prozradit ani její vnitřek.
+        const inner = formatExpr({ f: { n: 1, d: 1 }, x: left.x, c: left.c });
+        assert.ok(
+          !p.writeHint.includes(inner),
+          `${p.form}: writeHint složil vnitřek závorky (${inner}): ${p.writeHint}`
+        );
+      }
+      // Pravá strana je výsledek ze zadání - vrstva 2 ho nedopisuje, jinak má
+      // hráč po překladu fráze rovnou celou rovnici.
+      const rightText = formatExpr(p.equation.right);
+      assert.ok(
+        !mentionsAsNumber(p.writeHint, rightText),
+        `${p.form}: writeHint prozradil pravou stranu (${rightText}): ${p.writeHint}`
+      );
+    }
+  }
+  assert.equal(seenForms.size, 9, `nepokryté formy: ${[...seenForms].sort()}`);
+});
+
+test('TDD-MATH-007-N: distraktory jsou vždy tři i u nejmenší odpovědi', () => {
+  // Reprodukce vady: u odpovědi 1 padnou hodnota−1 i hodnota−delta pod nulu
+  // a hodnota+2 se zdvojí s hodnota+delta - dřív zbyly jen dva distraktory.
+  const smallest = generateWordProblem(294, 6);
+  assert.equal(smallest.answer.value, 1, 'seed 294 v obtížnosti 6 má mít odpověď 1');
+  assert.equal(smallest.distractors.length, 3, `${smallest.text}: ${smallest.distractors}`);
+
+  for (let seed = 1; seed <= 1200; seed++) {
+    for (const difficulty of [2, 3, 4, 5, 6]) {
+      const p = generateWordProblem(seed, difficulty);
+      if (p.answer.kind !== 'int') {
+        continue;
+      }
+      assert.equal(p.distractors.length, 3, `${p.text}: ${p.distractors}`);
+      assert.equal(new Set(p.distractors).size, 3, `duplicitní distraktory: ${p.text}`);
+      assert.ok(
+        p.distractors.every((d) => Number.isInteger(d) && d > 0 && d !== p.answer.value),
+        `distraktory musí být kladné celé a různé od odpovědi: ${p.text}: ${p.distractors}`
+      );
+    }
+  }
+});
+
+test('TDD-MATH-007-O: nečíselná difficulty spadne na nejlehčí, na výstupu je vždy 2-6', () => {
+  // NaN dřív proklouzlo clampem (Math.trunc(NaN) = NaN), spadlo do větve
+  // default (nejtěžší obtížnost) a šířilo se dál jako difficulty: NaN.
+  for (const bad of [NaN, 'abc', {}, [], true, null, undefined]) {
+    assert.deepEqual(
+      generateWordProblem(7, bad),
+      generateWordProblem(7, 2),
+      `nečíselná obtížnost ${String(bad)} má dát nejlehčí úlohu`
+    );
+  }
+  // Číselné okraje se pořád přiřazují k nejbližšímu kraji.
+  for (const [given, expected] of [
+    [0, 2],
+    [1, 2],
+    [-3, 2],
+    [2.9, 2],
+    [7, 6],
+    [99, 6],
+    [Infinity, 6],
+    [-Infinity, 2],
+    ['4', 4],
+  ]) {
+    assert.deepEqual(
+      generateWordProblem(7, given),
+      generateWordProblem(7, expected),
+      `obtížnost ${String(given)} -> ${expected}`
+    );
+  }
+  // Pole difficulty jde do uloženého stavu i adaptivity - musí být číslo 2-6.
+  for (const difficulty of [NaN, 'abc', null, 0, 99, Infinity, 4]) {
+    const d = generateWordProblem(11, difficulty).difficulty;
+    assert.ok(Number.isInteger(d) && d >= 2 && d <= 6, `difficulty na výstupu je ${d}`);
+  }
 });

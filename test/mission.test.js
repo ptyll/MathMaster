@@ -112,6 +112,52 @@ test('generateForTopic pokrývá všechna témata', () => {
   assert.throws(() => generateForTopic('geometry', 1, 1), /Neznámé téma/);
 });
 
+test('TDD-MAP-002-D: obtížnost nad stropem tématu (Mustafar 7) generátor unese', () => {
+  // Mustafar startuje na 7, adaptivita s ní může vyjet i jinde. Žádné téma
+  // se nesmí zaseknout ani vrátit rozbitý příklad - jen svoje maximum.
+  for (const topic of ['equations', 'fractions', 'fractionEquations', 'wordProblems']) {
+    for (let difficulty = 1; difficulty <= 8; difficulty++) {
+      for (let seed = 1; seed <= 30; seed++) {
+        const ex = generateForTopic(topic, seed * 37, difficulty, seed);
+        assert.equal(ex.topic, topic, `${topic}/${difficulty}`);
+        assert.ok(ex.text.length > 0, `${topic}/${difficulty}: prázdné zadání`);
+        assert.ok(ex.answer && (ex.answer.kind === 'int' || ex.answer.kind === 'fraction' || ex.answer.kind === 'choice'), `${topic}/${difficulty}: chybí odpověď`);
+        assert.ok(Number.isFinite(ex.difficulty), `${topic}/${difficulty}: obtížnost není číslo`);
+        assert.ok(ex.steps.length >= 1, `${topic}/${difficulty}: chybí kroky řešení`);
+      }
+    }
+  }
+  // Obtížnost 7 dává stejné (nejtěžší) zadání jako 6 - výš generátory nic nemají.
+  assert.deepEqual(generateForTopic('equations', 99, 7), generateForTopic('equations', 99, 6));
+  assert.deepEqual(generateForTopic('fractionEquations', 99, 7), generateForTopic('fractionEquations', 99, 3));
+});
+
+test('nečíselná obtížnost spadne na nejlehčí úroveň místo NaN v zadání', () => {
+  for (const bad of [undefined, null, NaN, 'těžká']) {
+    const ex = generateForTopic('equations', 7, bad);
+    assert.ok(Number.isFinite(ex.difficulty), `obtížnost ${String(bad)} propadla do příkladu`);
+    assert.ok(!ex.text.includes('NaN'));
+  }
+});
+
+test('mise s obtížností 7 a mixem témat doběhne (Mustafar)', () => {
+  const mission = testMission({
+    id: 'mustafar-3',
+    planetId: 'mustafar',
+    crystalColor: 'žlutý',
+    topic: undefined,
+    topics: ['equations', 'fractions', 'fractionEquations'],
+    startDifficulty: 7,
+    exerciseCount: 4,
+  });
+  for (let i = 0; i < 4; i++) {
+    assert.ok(mission.currentExercise.text.length > 0);
+    mission.recordAnswer('correct');
+  }
+  assert.equal(mission.isDone, true);
+  assert.equal(mission.getSummary().stars, 3);
+});
+
 test('fractions téma cyklí druhy úloh', () => {
   const kinds = new Set();
   for (let i = 0; i < 6; i++) {

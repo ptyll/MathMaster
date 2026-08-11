@@ -14,29 +14,54 @@ import { nextDifficulty, shouldOfferHint } from '../content/adaptive.js';
 const FRACTION_KINDS = ['add', 'subtract', 'simplify', 'equivalent', 'compare', 'expand'];
 
 /**
- * Sjednocený generátor: téma + obtížnost (1-6) -> příklad.
+ * Strop obtížnosti podle tématu - nad ním už žádný generátor nic nového nemá.
+ * Endgame Mustafar startuje na 7 (UCV-MAP-002): to není nová úroveň příkladů,
+ * ale pokyn "každé téma na svém maximu". Kdo strop posune, musí zároveň
+ * dodat generátoru novou formu, jinak je vyšší číslo jen kosmetika.
+ */
+const TOPIC_MAX_DIFFICULTY = Object.freeze({
+  equations: 6,
+  fractions: 3,
+  fractionEquations: 3,
+  wordProblems: 6,
+});
+
+/**
+ * Sjednocený generátor: téma + obtížnost -> příklad.
  * equations: 1-2 jednoduché, 3-6 s násobením (mapováno na jeho 1-4,
  *   tedy až po závorky a x na obou stranách).
  * fractions: druhy se cyklí podle indexu, obtížnost max 3.
  * fractionEquations: obtížnost max 3.
- * wordProblems: generátor sám drží obtížnost v rozsahu 2-6.
+ * wordProblems: 2-6 (generátor si spodní kraj hlídá i sám).
+ * Obtížnost mimo rozsah se ořízne na strop tématu - mise ani adaptivita
+ * pak nemusí vědět, kde má které téma konec.
  */
 export function generateForTopic(topic, seed, difficulty, index = 0) {
+  const d = clampDifficulty(topic, difficulty);
   if (topic === 'equations') {
-    return difficulty <= 2
-      ? generateSimpleEquation(seed, difficulty)
-      : generateLinearEquation(seed, Math.min(difficulty - 2, 4) || 1);
+    return d <= 2 ? generateSimpleEquation(seed, d) : generateLinearEquation(seed, d - 2);
   }
   if (topic === 'fractions') {
-    return generateFractionExercise(seed, FRACTION_KINDS[index % FRACTION_KINDS.length], Math.min(difficulty, 3));
+    return generateFractionExercise(seed, FRACTION_KINDS[index % FRACTION_KINDS.length], d);
   }
   if (topic === 'fractionEquations') {
-    return generateFractionEquation(seed, Math.min(difficulty, 3));
+    return generateFractionEquation(seed, d);
   }
   if (topic === 'wordProblems') {
-    return generateWordProblem(seed, difficulty);
+    return generateWordProblem(seed, d);
   }
   throw new Error(`Neznámé téma: ${topic}`);
+}
+
+/**
+ * Ořízne obtížnost do rozsahu, který téma umí. Nečíselnou hodnotu (rozbitý
+ * uložený stav, mise bez startDifficulty) srazí na nejlehčí úroveň - NaN by
+ * se jinak propsalo až do vygenerovaného příkladu a rozbilo mu zadání.
+ */
+function clampDifficulty(topic, difficulty) {
+  const max = TOPIC_MAX_DIFFICULTY[topic] ?? 6;
+  const value = Math.trunc(Number(difficulty));
+  return Number.isNaN(value) ? 1 : Math.min(Math.max(value, 1), max);
 }
 
 /**

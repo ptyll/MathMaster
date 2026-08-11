@@ -713,6 +713,21 @@ p {
   color: var(--color-accent);
 }
 
+/* Mapa je jediná obrazovka s vodorovným pásem - 11 planet potřebuje víc
+   místa než 720px sloupec zbytku hry. Při 720px se vešlo přesně pět karet
+   (4 + 5×120 + 4×16 = 672 px) a z Bespinu nebyl vidět ani pixel. */
+.screen-map {
+  max-width: 1120px;
+}
+
+/* Obal pásu: nese přechod u okraje a šipky. Bez nich mapa na tabletu
+   vypadá jako by končila poslední viditelnou kartou (scrollbar je overlay,
+   tedy do prvního posunu neviditelný). */
+.planet-strip-wrap {
+  position: relative;
+  width: 100%;
+}
+
 .planet-strip {
   display: flex;
   gap: 1rem;
@@ -720,12 +735,71 @@ p {
   width: 100%;
   padding: 0.5rem 0.25rem;
   justify-content: flex-start;
+  scroll-behavior: smooth;
 }
 
-@media (min-width: 900px) {
+/* Přechod do pozadí na straně, kam se dá posunout - karta pod ním se
+   'noří ven' z obrazovky, takže je vidět, že mapa pokračuje. */
+.planet-strip-wrap::before,
+.planet-strip-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3.5rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.planet-strip-wrap::before {
+  left: 0;
+  background: linear-gradient(to right, var(--color-bg), transparent);
+}
+
+.planet-strip-wrap::after {
+  right: 0;
+  background: linear-gradient(to left, var(--color-bg), transparent);
+}
+
+.planet-strip-wrap.can-scroll-left::before,
+.planet-strip-wrap.can-scroll-right::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
   .planet-strip {
-    justify-content: center;
+    scroll-behavior: auto;
   }
+
+  .planet-strip-wrap::before,
+  .planet-strip-wrap::after {
+    transition: none;
+  }
+}
+
+/* Šipka leží nad přechodem u okraje, ne v řadě karet - jinak by na úzkém
+   tabletu ukrojila z pásu celou jednu planetu. Velikost drží .btn (56 px). */
+.planet-strip-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  padding: 0;
+  font-size: 2rem;
+  line-height: 1;
+  background: var(--color-bg-panel);
+  border: 2px solid var(--color-accent);
+  color: var(--color-text);
+  opacity: 0.95;
+}
+
+.planet-strip-prev {
+  left: 0;
+}
+
+.planet-strip-next {
+  right: 0;
 }
 
 .planet-card {
@@ -972,6 +1046,17 @@ p {
 .crystal-zelený { background: linear-gradient(160deg, #9fe8a8, #2b8a3e); }
 .crystal-červený { background: linear-gradient(160deg, #ff9c9c, #b02b2b); }
 .crystal-fialový { background: linear-gradient(160deg, #d5a6ff, #6b2bb0); }
+/* Endgame planety (UCV-MAP-002). Černý krystal má světlejší horní odstín,
+   jinak by na tmavém panelu splynul s pozadím a vypadal jako prázdné místo. */
+.crystal-oranžový { background: linear-gradient(160deg, #ffd0a0, #d9772b); }
+.crystal-tyrkysový { background: linear-gradient(160deg, #a8f0ea, #1d8f96); }
+.crystal-žlutý { background: linear-gradient(160deg, #fff3a8, #d9b12b); }
+.crystal-růžový { background: linear-gradient(160deg, #ffc2dd, #c74f8f); }
+.crystal-bronzový { background: linear-gradient(160deg, #e8c08a, #8f5a24); }
+/* Spodní odstín nesmí splynout s buňkou inventáře (--color-bg): při #17171f
+   měl kontrast 1.06:1 a krystalu se rozpadl tvar. #606070 je pořád zdaleka
+   nejtmavší krystal ve hře, ale je vidět. */
+.crystal-černý { background: linear-gradient(160deg, #8b8b9c, #606070); }
 
 .crystal-count {
   font-weight: 700;

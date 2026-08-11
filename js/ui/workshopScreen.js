@@ -18,7 +18,12 @@ import {
   hasShip,
 } from '../content/crafting.js';
 
-const CRYSTAL_COLORS = ['modrý', 'bílý', 'zelený', 'červený', 'fialový'];
+/**
+ * Barvy krystalů v pořadí planet - odvozené z dat, ne ruční seznam.
+ * Endgame (UCV-MAP-002) přidal šest barev a inventář je musí ukázat, aniž
+ * by se sem sahalo; nová planeta se tak nikdy nezapomene doplnit.
+ */
+const CRYSTAL_COLORS = [...new Set(PLANETS.map((p) => p.crystalColor))];
 
 /** Planeta, kde se barva získá (pro text 'Potřebuješ zelený krystal z Dagobah'). */
 function planetForColor(color) {

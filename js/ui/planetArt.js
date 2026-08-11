@@ -55,7 +55,77 @@ const ART = {
       svg.appendChild(svgEl('rect', { x: x + 2, y: 66 - h, width: 2, height: 2, fill: '#ffd94d' }));
     }
   },
+  // město v oblacích: oranžová koule, pásy mraků a plošina nad nimi
+  clouds: (svg) => {
+    svg.appendChild(svgEl('circle', { cx: 50, cy: 52, r: 26, fill: '#e08a3c' }));
+    svg.appendChild(svgEl('rect', { x: 26, y: 45, width: 32, height: 7, rx: 3.5, fill: '#ffe0b8' }));
+    svg.appendChild(svgEl('rect', { x: 44, y: 60, width: 30, height: 7, rx: 3.5, fill: '#ffd3a0' }));
+    svg.appendChild(svgEl('rect', { x: 46, y: 20, width: 8, height: 14, fill: '#f7c887' }));
+    svg.appendChild(svgEl('ellipse', { cx: 50, cy: 34, rx: 15, ry: 4, fill: '#b56526' }));
+  },
+  // oceán: tyrkysová koule, vlny a déšť
+  ocean: (svg) => {
+    svg.appendChild(svgEl('circle', { cx: 50, cy: 52, r: 26, fill: '#2f9fa8' }));
+    svg.appendChild(svgEl('path', { d: 'M 27 54 q 7 -6 14 0 q 7 6 14 0 q 7 -6 14 0', fill: 'none', stroke: '#c6f3f0', 'stroke-width': 3 }));
+    svg.appendChild(svgEl('path', { d: 'M 30 65 q 7 -6 14 0 q 7 6 14 0', fill: 'none', stroke: '#8ddcd8', 'stroke-width': 3 }));
+    for (const x of [30, 42, 54, 66]) {
+      svg.appendChild(svgEl('line', { x1: x, y1: 8, x2: x - 5, y2: 26, stroke: '#a8e6ff', 'stroke-width': 2 }));
+    }
+  },
+  // láva: rozžhavená koule s ohnivými řekami a sopkou
+  // Původní téměř černý povrch (#4a2b28) měl proti kartě kontrast 1.32:1 -
+  // planeta na mapě nebyla vidět. Temnotu nese sopka a stíny, ne těleso.
+  lava: (svg) => {
+    svg.appendChild(svgEl('circle', { cx: 50, cy: 52, r: 26, fill: '#a85d4e' }));
+    svg.appendChild(svgEl('path', { d: 'M 26 52 q 12 7 24 -1 q 12 -8 24 1', fill: 'none', stroke: '#ff8f2b', 'stroke-width': 4 }));
+    svg.appendChild(svgEl('path', { d: 'M 30 65 q 10 6 20 -2', fill: 'none', stroke: '#ffd23f', 'stroke-width': 3 }));
+    svg.appendChild(svgEl('polygon', { points: '42,42 50,26 58,42', fill: '#5a2f28' }));
+    svg.appendChild(svgEl('circle', { cx: 50, cy: 26, r: 4, fill: '#ffd23f' }));
+  },
+  // lesní měsíc: svěží zelená koule s jehličnany, nad ní růžová mateřská planeta
+  // Světlejší a studenější zeleň než bažinatý Dagobah (#4d7c4d): dvě zelené
+  // koule vedle sebe se od sebe musí poznat i bez čtení jména. K odstínu se
+  // přidává jiná silueta (špičaté jehličnany vs. kulaté koruny) a růžová
+  // mateřská planeta, kterou jinde na mapě nic nemá.
+  forest: (svg) => {
+    svg.appendChild(svgEl('circle', { cx: 50, cy: 52, r: 26, fill: '#63ab74' }));
+    for (const [x, base] of [[36, 62], [50, 52], [64, 64]]) {
+      svg.appendChild(svgEl('polygon', { points: `${x},${base - 18} ${x - 7},${base} ${x + 7},${base}`, fill: '#2c5c37' }));
+      svg.appendChild(svgEl('rect', { x: x - 1.5, y: base, width: 3, height: 5, fill: '#4a3524' }));
+    }
+    svg.appendChild(svgEl('circle', { cx: 78, cy: 20, r: 10, fill: '#f2a0c4' }));
+    svg.appendChild(svgEl('ellipse', { cx: 78, cy: 20, rx: 15, ry: 4, fill: 'none', stroke: '#ffd0e4', 'stroke-width': 2 }));
+  },
+  // kaňony: rezavá koule s roklinami a úlovitou věží
+  canyon: (svg) => {
+    svg.appendChild(svgEl('circle', { cx: 50, cy: 52, r: 26, fill: '#b5713a' }));
+    svg.appendChild(svgEl('path', { d: 'M 30 40 l 8 13 l -6 11', fill: 'none', stroke: '#7c4620', 'stroke-width': 4 }));
+    svg.appendChild(svgEl('path', { d: 'M 58 34 l 7 15 l -5 13', fill: 'none', stroke: '#7c4620', 'stroke-width': 4 }));
+    svg.appendChild(svgEl('polygon', { points: '46,58 50,34 54,58', fill: '#8f5527' }));
+    svg.appendChild(svgEl('ellipse', { cx: 50, cy: 70, rx: 18, ry: 4, fill: '#d09257' }));
+  },
+  // temná planeta: šedofialová koule, rudá mlha, trny a rudé oči
+  // Původní téměř černá koule (#241f2e) měla proti kartě kontrast 1.03:1 -
+  // Dathomir na mapě prakticky nebyl. Temnotu teď nesou detaily (mlha, trny,
+  // oči), ne neviditelné těleso.
+  dark: (svg) => {
+    svg.appendChild(svgEl('circle', { cx: 50, cy: 52, r: 26, fill: '#786b98' }));
+    svg.appendChild(svgEl('ellipse', { cx: 50, cy: 62, rx: 23, ry: 7, fill: '#5e2036' }));
+    for (const [x, base] of [[36, 58], [50, 50], [63, 60]]) {
+      svg.appendChild(svgEl('polygon', { points: `${x},${base - 16} ${x - 4},${base} ${x + 4},${base}`, fill: '#33253c' }));
+    }
+    svg.appendChild(svgEl('circle', { cx: 43, cy: 44, r: 2.5, fill: '#5c0a1e' }));
+    svg.appendChild(svgEl('circle', { cx: 57, cy: 44, r: 2.5, fill: '#5c0a1e' }));
+  },
 };
+
+/**
+ * Má druh planety vlastní ilustraci? Neznámý druh se tiše kreslí jako poušť,
+ * takže bez téhle kontroly by nová planeta bez artu prošla i revizí.
+ */
+export function hasPlanetArt(artKind) {
+  return Object.hasOwn(ART, artKind);
+}
 
 /** Vykreslí blocky planetu (dekorativní - jméno nese tlačítko). locked = šedá + zámek. */
 export function createPlanetArt(artKind, { locked = false } = {}) {

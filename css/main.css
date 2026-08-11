@@ -1515,3 +1515,137 @@ p {
   color: var(--color-accent);
   border: 2px solid var(--color-accent);
 }
+
+/* --- Dlaždicové skládání rovnice (UCV-INPUT-003) --- */
+.tile-builder {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1rem;
+  width: 100%;
+  max-width: 640px;
+}
+
+.tile-problem {
+  font-size: 1.2rem;
+  color: var(--color-text);
+  max-width: 52ch;
+  margin: 0 auto;
+}
+
+/* Dvě schránky vedle sebe spojené pevným '=' */
+.tile-boxes {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.tile-eq {
+  align-self: center;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.tile-box {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: calc(var(--touch-target) + 16px);
+  padding: 8px;
+  background: var(--color-bg-panel);
+  border: 3px dashed transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  /* Dlouhá strana roluje vodorovně - dlaždice se nikdy nezmenšují. */
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.tile-box.is-active {
+  border-color: var(--color-accent);
+  border-style: solid;
+}
+
+.tile-box:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.tile-box-hint {
+  color: var(--color-text-dim);
+  padding: 0 0.5rem;
+  white-space: nowrap;
+}
+
+/* Dlaždice ve schránce i v paletě: min. dotykový cíl 56 px, nezmenšují se */
+.tile-cell,
+.tile-key {
+  flex: 0 0 auto;
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-family: inherit;
+  background: #232b57;
+  color: var(--color-text);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tile-cell:hover,
+.tile-cell:focus-visible,
+.tile-key:hover,
+.tile-key:focus-visible {
+  background: var(--color-accent);
+  color: #06122b;
+}
+
+/* Paleta ve dvou řadách; na úzké obrazovce se dlaždice zalomí */
+.tile-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tile-palette-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.tile-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.tile-submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Zpětná vazba pod schránkami, u místa kde hráč kliká */
+.tile-feedback {
+  margin: 0;
+  min-height: 1.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.tile-feedback.is-wrong {
+  color: #ffb4a2;
+}
+
+.tile-feedback.is-good {
+  color: #8ee6a0;
+}
+
+/* Zatřesení po špatné validaci (klíčové snímky sdílí s avatarem) */
+.tile-boxes.is-shaking {
+  animation: avatar-shake 0.5s ease;
+}

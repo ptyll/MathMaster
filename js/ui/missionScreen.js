@@ -9,7 +9,27 @@ import { createAvatar, createBossArt } from './avatar.js';
 import { createSolutionViewer } from './solutionViewer.js';
 import { createStepSession } from '../engine/stepSession.js';
 import { createStepInput } from './stepInput.js';
-import { solveLinearSteps } from '../content/solver.js';
+import { createTileEquationBuilder } from './tileEquationBuilder.js';
+import { createFreeEquationInput } from './freeEquationInput.js';
+import { formatExpr, solveLinearSteps } from '../content/solver.js';
+import { equationInputKind, machineOperations } from '../content/wordProblems.js';
+
+/**
+ * Text vrstvené nápovědy ve fázi 'napiš rovnici' slovní úlohy (UCV-MISSION-003).
+ * Čistá funkce kvůli testům - DOM vrstva ji jen zobrazí.
+ * 1 = označ si neznámou x, 2 = nápověda k překladu fráze (writeHint z generátoru,
+ * nikdy ne celá rovnice), 3 = ukázat rovnici.
+ */
+export function wordEquationHintText(exercise, hintLevel) {
+  if (hintLevel <= 1) {
+    return 'Co je neznámá? Označ si ji x.';
+  }
+  if (hintLevel === 2) {
+    return exercise.writeHint ?? exercise.hint;
+  }
+  const { left, right } = exercise.equation;
+  return `Rovnice je: ${formatExpr(left)} = ${formatExpr(right)}`;
+}
 
 /**
  * @param {HTMLElement} container
@@ -134,10 +154,15 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
    */
   function exerciseForExplanation() {
     const exercise = mission.currentExercise;
-    if (!stepSession || stepSession.kind !== 'equation' || stepSession.isDone) {
+    if (!stepSession || stepSession.isDone) {
       return exercise;
     }
+    // Rovnicové relace (včetně delegace ze slovní úlohy) nesou aktuální stav;
+    // ostatní relace (zlomky) kroky z generátoru používají přímo.
     const state = stepSession.equationState;
+    if (!state) {
+      return exercise;
+    }
     return { ...exercise, steps: solveLinearSteps(state.left, state.right) };
   }
 
@@ -203,6 +228,7 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
     const exercise = mission.currentExercise;
     exerciseEl.textContent = exercise.text;
     exerciseEl.hidden = false;
+    exerciseEl.classList.remove('exercise-text--corner');
     feedback.textContent = '';
     stepsPanel.hidden = true;
     stepsPanel.innerHTML = '';
@@ -213,8 +239,34 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
     destroyInput();
     inputHost.innerHTML = '';
 
-    stepSession = stepModeEnabled ? createStepSession(exercise) : null;
+    // Krokový režim je u slovních úloh VŽDY zapnutý (DEC-010) - příznak
+    // stepMode v konfiguraci mise je pro ně bez významu.
+    const wantsSteps = stepModeEnabled || exercise.topic === 'wordProblems';
+    stepSession = wantsSteps ? createStepSession(exercise) : null;
     root.classList.toggle('mission--step', !!(stepSession && stepSession.isActive));
+    const isWordSetup =
+      !!stepSession && stepSession.kind === 'wordProblem' && stepSession.phase === 'writeEquation';
+    root.classList.toggle('mission--word', isWordSetup);
+    if (isWordSetup) {
+      // Fáze 'napiš rovnici': zadání velkým písmem renderuje builder, karta
+      // by ho zdvojovala - a po validaci se zmenší do rohu (enterWordSteps).
+      exerciseEl.hidden = true;
+      const ops = machineOperations(exercise);
+      if (ops) {
+        inputHost.appendChild(buildMachineDiagram(ops));
+      }
+      const createBuilder =
+        equationInputKind(exercise.difficulty) === 'tiles'
+          ? createTileEquationBuilder
+          : createFreeEquationInput;
+      input = createBuilder(inputHost, {
+        problemText: exercise.text,
+        expected: exercise.equation,
+        onSubmit: handleEquationSubmit,
+      });
+      renderProgress();
+      return;
+    }
     if (stepSession && stepSession.isActive) {
       // Zadání ukazuje krokový vstup jako první položku cesty, karta by
       // ho zdvojovala - a její statický text by navíc zamrzl na původní rovnici.
@@ -258,6 +310,83 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
       });
     }
     renderProgress();
+  }
+
+  /**
+   * Početní stroj jako jednoduchý diagram šipek: vstup -> operace -> výstup.
+   * Generuje se ze struktury úlohy (machineOperations), nekreslí se ručně.
+   */
+  function buildMachineDiagram(ops) {
+    const diagram = document.createElement('div');
+    diagram.className = 'machine-diagram';
+    diagram.setAttribute('role', 'img');
+    diagram.setAttribute(
+      'aria-label',
+      `Početní stroj: vstup, pak ${ops.map((op) => `${op.symbol} ${op.value}`).join(', pak ')}, výstup`
+    );
+    const node = (text, className) => {
+      const el = document.createElement('span');
+      el.className = className;
+      el.textContent = text;
+      return el;
+    };
+    const arrow = () => {
+      const el = node('→', 'machine-arrow');
+      el.setAttribute('aria-hidden', 'true');
+      return el;
+    };
+    diagram.append(node('vstup', 'machine-node'));
+    for (const op of ops) {
+      diagram.append(arrow(), node(`${op.symbol} ${op.value}`, 'machine-op'));
+    }
+    diagram.append(arrow(), node('výstup', 'machine-node'));
+    return diagram;
+  }
+
+  /**
+   * Výsledek validace hráčovy rovnice z builderu (UCV-MISSION-003).
+   * Builder hlášku i zatřesení ukáže sám; mise tu jen počítá chyby
+   * (mismatch = equationSetup) a po uznání přechází do krokového režimu.
+   */
+  function handleEquationSubmit(result) {
+    if (!accepting || viewer || !stepSession || stepSession.kind !== 'wordProblem') {
+      return;
+    }
+    const recorded = stepSession.recordEquationResult(result);
+    if (!recorded.advanced) {
+      if (result.status === 'mismatch') {
+        avatar.react('wrong');
+        hintBtn.classList.add('attention');
+      }
+      // unparseable = nedopsaný zápis - jen hláška u builderu, žádná chyba.
+      return;
+    }
+    avatar.react('correct');
+    enterWordSteps();
+  }
+
+  /**
+   * Přechod z fáze 'napiš rovnici' do krokového řešení: zadání se zmenší
+   * do rohu karty (hráč ho může kdykoliv znovu přečíst) a obrazovka se
+   * přepne na standardní krokový vstup (UCV-STEP-001) nad HRÁČOVOU
+   * rovnicí - relace už startuje z multiTerm ?? canonical (DEC-011/012).
+   */
+  function enterWordSteps() {
+    destroyInput();
+    inputHost.innerHTML = '';
+    root.classList.remove('mission--word');
+    exerciseEl.hidden = false;
+    exerciseEl.classList.add('exercise-text--corner');
+    feedback.textContent = '';
+    hintLevel = 0;
+    setHintLabel('Nápověda');
+    stepsPanel.hidden = true;
+    stepsPanel.innerHTML = '';
+    stepUi = createStepInput(inputHost, {
+      session: stepSession.equationSession,
+      onFeedback: handleStepFeedback,
+      onSolved: handleStepSolved,
+    });
   }
 
   /**
@@ -390,6 +519,8 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
   }
 
   // Vrstvená nápověda: 1 = návod, 2 = první krok, 3 = celé řešení (UCV-LEARN-002).
+  // Ve fázi 'napiš rovnici' slovní úlohy jsou vrstvy jiné (UCV-MISSION-003):
+  // 1 = označ si neznámou x, 2 = nápověda k překladu fráze, 3 = ukázat rovnici.
   hintBtn.addEventListener('click', () => {
     if (!accepting) {
       return;
@@ -397,6 +528,29 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
     mission.useHint();
     hintBtn.classList.remove('attention');
     hintLevel = Math.min(hintLevel + 1, 3);
+
+    if (stepSession && stepSession.kind === 'wordProblem' && stepSession.phase === 'writeEquation') {
+      const exercise = mission.currentExercise;
+      stepsPanel.innerHTML = '';
+      const p = document.createElement('p');
+      if (hintLevel === 1) {
+        p.textContent = wordEquationHintText(exercise, 1);
+        setHintLabel('Víc pomoct');
+      } else if (hintLevel === 2) {
+        // Nápověda k překladu konkrétní fráze - text nese generátor (writeHint),
+        // nikdy ne celá rovnice (tu ukáže až vrstva 3).
+        p.textContent = wordEquationHintText(exercise, 2);
+        setHintLabel('Ukaž rovnici');
+      } else {
+        // Teprve třetí vrstva prozradí správnou rovnici.
+        p.textContent = wordEquationHintText(exercise, 3);
+        setHintLabel('Nápověda');
+      }
+      stepsPanel.appendChild(p);
+      stepsPanel.hidden = false;
+      return;
+    }
+
     // V krokovém režimu se druhá úroveň počítá z místa, kde hráč stojí.
     const exercise = exerciseForExplanation();
 

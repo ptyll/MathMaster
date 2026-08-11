@@ -7,6 +7,8 @@
  * konkrétní doporučení, ne jen popisek.
  */
 
+import { EQUATION_SETUP_ERROR } from './equationParse.js';
+
 export const ERROR_KINDS = Object.freeze({
   ARITHMETIC: 'arithmetic',
   STRATEGY: 'strategy',
@@ -15,6 +17,7 @@ export const ERROR_KINDS = Object.freeze({
   COMMON_DENOMINATOR: 'commonDenominator',
   EXPAND: 'expand',
   SKIPPED: 'skipped',
+  EQUATION_SETUP: EQUATION_SETUP_ERROR,
 });
 
 const CATALOG = {
@@ -52,6 +55,11 @@ const CATALOG = {
     label: 'Přeskočený příklad',
     hint: 'Příklad vzdal, aniž by ho zkusil dořešit.',
     advice: 'Přeskakované příklady bývají nad aktuální úrovní - zkuste s ním projít jeden společně.',
+  },
+  [ERROR_KINDS.EQUATION_SETUP]: {
+    label: 'Rovnice nesedí na zadání',
+    hint: 'Počítá dobře, ale ze slovního zadání sestaví špatnou rovnici.',
+    advice: 'Procvičte překlad zadání na rovnici: co je neznámá x a co se s ní postupně děje, krok za krokem.',
   },
 };
 

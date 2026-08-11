@@ -1777,3 +1777,52 @@ p {
 .free-eq-display.is-shaking {
   animation: avatar-shake 0.5s ease;
 }
+
+/* --- Slovní úlohy v misi: fáze 'napiš rovnici' (UCV-MISSION-003) --- */
+
+/* Zadání čte hráč jako hlavní úkol - velké čitelné písmo. */
+.mission--word .tile-problem,
+.mission--word .free-eq-problem {
+  font-size: 1.6rem;
+  font-weight: 700;
+  max-width: 60ch;
+}
+
+/* Početní stroj jako diagram šipek: vstup -> operace -> výstup. */
+.machine-diagram {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 640px;
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.machine-diagram .machine-node {
+  padding: 8px 14px;
+  border: 3px solid var(--color-accent);
+  border-radius: var(--radius);
+}
+
+.machine-diagram .machine-op {
+  padding: 8px 14px;
+  background: var(--color-bg-panel);
+  border-radius: var(--radius);
+}
+
+.machine-diagram .machine-arrow {
+  font-size: 1.6rem;
+  color: var(--color-accent);
+}
+
+/* Po validaci se zadání zmenší do rohu karty - zůstane k přečtení,
+   ale hlavní roli přebírá krokové řešení hráčovy rovnice. */
+.exercise-text--corner {
+  font-size: 0.95rem;
+  font-weight: 400;
+  text-align: right;
+  opacity: 0.75;
+}

@@ -7,6 +7,7 @@
 import { generateSimpleEquation, generateLinearEquation } from '../content/equations.js';
 import { generateFractionExercise } from '../content/fractionExercises.js';
 import { generateFractionEquation } from '../content/fractionEquations.js';
+import { generateWordProblem } from '../content/wordProblems.js';
 import { nextDifficulty, shouldOfferHint } from '../content/adaptive.js';
 
 /** Druhy zlomkových úloh se v misi střídají, aby to nebyla nuda. */
@@ -18,6 +19,7 @@ const FRACTION_KINDS = ['add', 'subtract', 'simplify', 'equivalent', 'compare', 
  *   tedy až po závorky a x na obou stranách).
  * fractions: druhy se cyklí podle indexu, obtížnost max 3.
  * fractionEquations: obtížnost max 3.
+ * wordProblems: generátor sám drží obtížnost v rozsahu 2-6.
  */
 export function generateForTopic(topic, seed, difficulty, index = 0) {
   if (topic === 'equations') {
@@ -30,6 +32,9 @@ export function generateForTopic(topic, seed, difficulty, index = 0) {
   }
   if (topic === 'fractionEquations') {
     return generateFractionEquation(seed, Math.min(difficulty, 3));
+  }
+  if (topic === 'wordProblems') {
+    return generateWordProblem(seed, difficulty);
   }
   throw new Error(`Neznámé téma: ${topic}`);
 }

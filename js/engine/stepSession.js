@@ -9,6 +9,9 @@
  * Dva druhy relace:
  *  - 'equation'  rovnice: hráč volí operaci a pak dopočítá, co zbude
  *  - 'fraction'  sčítání/odčítání zlomků: společný jmenovatel -> čitatelé -> krácení
+ *  - 'wordProblem' slovní úloha (UCV-MISSION-003): nejdřív fáze 'napiš
+ *    rovnici', po validaci deleguje na rovnicovou relaci nad HRÁČOVOU
+ *    rovnicí (start z multiTerm ?? canonical, DEC-011)
  * Úlohy s jediným krokem (simplify, expand, equivalent) a tlačítková
  * volba (compare) krokový režim nepoužívají - isActive je false.
  */
@@ -24,6 +27,7 @@ import {
   cloneState,
 } from '../content/stepCheck.js';
 import { formatExpr, isFactored, needsCombine } from '../content/solver.js';
+import { EQUATION_SETUP_ERROR } from '../content/equationParse.js';
 import {
   makeFraction,
   fractionsEqual,
@@ -60,6 +64,9 @@ function sameMagnitude(a, b) {
  * @returns {object} relace; při isActive === false se příklad řeší zadáním výsledku
  */
 export function createStepSession(exercise) {
+  if (exercise.topic === 'wordProblems') {
+    return createWordProblemSession(exercise);
+  }
   if (exercise.equation) {
     return createEquationSession(exercise);
   }
@@ -67,6 +74,102 @@ export function createStepSession(exercise) {
     return createFractionSession(exercise);
   }
   return { kind: 'none', isActive: false };
+}
+
+/* ------------------------------------------------------------------ */
+/* Slovní úloha: fáze 'napiš rovnici' -> krokové řešení                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Relace slovní úlohy (UCV-MISSION-003). První fáze je psaní rovnice ze
+ * zadání - samotnou validaci dělá vstupní builder (dlaždice/volný zápis)
+ * přes parseEquation a výsledek hlásí přes recordEquationResult. Teprve
+ * uznává rovnice spustí rovnicovou relaci nad HRÁČOVOU rovnicí (start
+ * z result.multiTerm ?? result.canonical, DEC-011/012) - dítě řeší to,
+ * co samo napsalo, a nesčtené členy sečte operací combine (DEC-010).
+ *
+ * Chyby z obou fází (equationSetup i krokové) se agregují do JEDNOHO
+ * výsledku za příklad - mission.recordStepResult z toho udělá nejvýš
+ * jednu chybu pro hvězdy a jeden záznam pro adaptivitu, jinak by se
+ * rozbily obojí (stejný vzor jako u čistého krokového režimu).
+ */
+function createWordProblemSession(exercise) {
+  let inner = null;        // rovnicová relace po úspěšné validaci
+  let setupMistakes = 0;
+  const setupErrors = {};
+
+  const session = {
+    kind: 'wordProblem',
+    isActive: true,
+
+    get phase() {
+      return inner ? inner.phase : 'writeEquation';
+    },
+    get isDone() {
+      return inner ? inner.isDone : false;
+    },
+    /** Rovnicová relace nad hráčovou rovnicí, nebo null před validací. */
+    get equationSession() {
+      return inner;
+    },
+    // Delegované ukazatele pro misní obrazovku - před validací neutrální.
+    get mistakesOnStep() {
+      return inner ? inner.mistakesOnStep : 0;
+    },
+    get shouldOfferHint() {
+      return inner ? inner.shouldOfferHint : false;
+    },
+    get shouldShowHelp() {
+      return inner ? inner.shouldShowHelp : false;
+    },
+    get equationState() {
+      return inner ? inner.equationState : null;
+    },
+
+    /**
+     * Zápis výsledku validace hráčovy rovnice z builderu (parseEquation).
+     * mismatch = dobře zapsaná rovnice mimo zadání -> chyba equationSetup.
+     * unparseable = nedopsaný zápis -> jen hláška u builderu, bez chyby
+     * (nápověda, ne statistika, dle kontraktu parseEquation).
+     * @param {object} result výsledek parseEquation(tokens, expected)
+     * @returns {{advanced: boolean}} true = rovnice uznána, jedeme do kroků
+     */
+    recordEquationResult(result) {
+      if (inner) {
+        return { advanced: true };
+      }
+      if (result.status === 'match' || result.status === 'ok') {
+        // Start z HRÁČOVY rovnice: nesčtený multi-term tvar, když je na
+        // některé straně co sčítat, jinak kanonický tvar (DEC-011/012).
+        const start = result.multiTerm ?? result.canonical;
+        inner = createEquationSession({ ...exercise, equation: start });
+        return { advanced: true };
+      }
+      if (result.status === 'mismatch') {
+        setupMistakes++;
+        setupErrors[EQUATION_SETUP_ERROR] = (setupErrors[EQUATION_SETUP_ERROR] ?? 0) + 1;
+      }
+      return { advanced: false };
+    },
+
+    /** Souhrn za celý příklad - obě fáze dohromady (vzor recordStepResult). */
+    getOutcome() {
+      const innerOutcome = inner
+        ? inner.getOutcome()
+        : { solved: false, mistakes: 0, errors: {} };
+      const errors = { ...setupErrors };
+      for (const [kind, count] of Object.entries(innerOutcome.errors)) {
+        errors[kind] = (errors[kind] ?? 0) + count;
+      }
+      return {
+        solved: innerOutcome.solved,
+        mistakes: setupMistakes + innerOutcome.mistakes,
+        errors,
+      };
+    },
+  };
+
+  return session;
 }
 
 /* ------------------------------------------------------------------ */

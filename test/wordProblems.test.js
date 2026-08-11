@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { generateWordProblem } from '../js/content/wordProblems.js';
-import { evaluateExpr, effectiveX } from '../js/content/solver.js';
+import { evaluateExpr, effectiveX, formatExpr } from '../js/content/solver.js';
 import { fractionsEqual, isSimplified, isWhole, makeFraction } from '../js/content/fractions.js';
 
 function answerAsFraction(answer) {
@@ -209,4 +209,36 @@ test('TDD-MATH-007-J: krokový režim začíná vždy z kanonické rovnice úloh
       }
     }
   }
+});
+
+test('TDD-MATH-007-K: writeHint - překlad fráze u všech forem, nikdy ne celá rovnice', () => {
+  for (let seed = 1; seed <= 300; seed++) {
+    for (const difficulty of [2, 3, 4, 5, 6]) {
+      const p = generateWordProblem(seed, difficulty);
+      // Každá forma/obtížnost má neprázdnou nápovědu k překladu fráze (UCV-MISSION-003).
+      assert.equal(typeof p.writeHint, 'string', `chybí writeHint: ${p.form}`);
+      assert.ok(p.writeHint.trim().length > 0, `prázdný writeHint: ${p.form}`);
+      // Překlad fráze nikdy neprozradí rovnici - žádné rovnítko (= výsledek)
+      // ani řetězec celé rovnice.
+      assert.ok(!p.writeHint.includes('='), `writeHint obsahuje '=': ${p.form}: ${p.writeHint}`);
+      const equationText = `${formatExpr(p.equation.left)} = ${formatExpr(p.equation.right)}`;
+      assert.ok(!p.writeHint.includes(equationText), `writeHint prozradil rovnici: ${p.form}`);
+    }
+  }
+});
+
+test('TDD-MATH-007-L: řešitelský hint machinePlusTimes neprozradí rovnici', () => {
+  let seen = 0;
+  for (let seed = 1; seed <= 300; seed++) {
+    const p = generateWordProblem(seed, 4);
+    if (p.form !== 'machinePlusTimes') {
+      continue;
+    }
+    seen++;
+    // Hint slouží krokové fázi - má zůstat řešitelský, ale bez rovnice
+    // (rovnici ve fázi 'napiš rovnici' ukáže až vrstva 3).
+    assert.ok(!p.hint.includes('='), `hint prozradil rovnici: ${p.hint}`);
+    assert.ok(!p.hint.includes(formatExpr(p.equation.left)), `hint obsahuje levou stranu rovnice: ${p.hint}`);
+  }
+  assert.ok(seen > 0, 've 300 seedech se má machinePlusTimes objevit');
 });

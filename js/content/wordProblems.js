@@ -65,7 +65,7 @@ function intDistractors(answer, delta) {
   return result;
 }
 
-function build({ kind, form, left, right, text, hint, seed, difficulty }) {
+function build({ kind, form, left, right, text, hint, writeHint, seed, difficulty }) {
   const steps = solveLinearSteps(left, right);
   const value = solvedValue(left, right);
   const lx = effectiveX(left);
@@ -90,6 +90,9 @@ function build({ kind, form, left, right, text, hint, seed, difficulty }) {
     // i výchozí stav krokového režimu (UCN-STEP-002).
     equation: { left: cloneExpr(left), right: cloneExpr(right) },
     hint,
+    // Nápověda k překladu fráze zadání do rovnice (UCV-MISSION-003, vrstva 2
+    // ve fázi 'napiš rovnici'). Krátká, per-form, NIKDY ne celá rovnice.
+    writeHint,
     distractors: isWhole(value) ? intDistractors(value.n, delta) : [],
     seed,
     difficulty,
@@ -110,6 +113,7 @@ function generateThinkNumberSimple(prng, seed, difficulty) {
       right: expr(0, 1, b, 1),
       text: `Myslím si číslo. Když k němu přičtu ${a}, dostanu ${b}. Které číslo si myslím?`,
       hint: 'Číslo, které hledáš, si označ x. Co se s ním stalo? Přičtení zrušíš odečtením - na obou stranách rovnice.',
+      writeHint: `Hledané číslo je x. 'K němu přičtu ${a}' znamená x + ${a}.`,
       seed,
       difficulty,
     });
@@ -125,6 +129,7 @@ function generateThinkNumberSimple(prng, seed, difficulty) {
     right: expr(0, 1, b, 1),
     text: `Myslím si číslo. Když od něj odečtu ${a}, dostanu ${b}. Které číslo si myslím?`,
     hint: 'Číslo, které hledáš, si označ x. Odečtení zrušíš přičtením - na obou stranách rovnice.',
+    writeHint: `Hledané číslo je x. 'Od něj odečtu ${a}' znamená x - ${a}.`,
     seed,
     difficulty,
   });
@@ -147,6 +152,7 @@ function generateTimesPlus(prng, seed, difficulty) {
       right,
       text: `Myslím si číslo. Když ho vynásobím ${a} a přičtu ${b}, dostanu ${c}. Které číslo si myslím?`,
       hint,
+      writeHint: `Hledané číslo je x. 'Vynásobím ${a}' znamená ${a}x a 'přičtu ${b}' znamená + ${b}.`,
       seed,
       difficulty,
     });
@@ -158,6 +164,7 @@ function generateTimesPlus(prng, seed, difficulty) {
     right,
     text: `Početní stroj vstup vynásobí ${a} a pak přičte ${b}. Který vstup dá výstup ${c}?`,
     hint,
+    writeHint: `Vstup je x. Stroj ho 'vynásobí ${a}', takže ${a}x, a pak 'přičte ${b}', takže + ${b}.`,
     seed,
     difficulty,
   });
@@ -175,7 +182,10 @@ function generatePlusTimes(prng, seed, difficulty) {
     left: factoredExpr(a, 1, 1, 1, b, 1),
     right: expr(0, 1, c, 1),
     text: `Početní stroj ke vstupu přičte ${b} a výsledek vynásobí ${a}. Který vstup dá výstup ${c}?`,
-    hint: `Stroj napřed přičetl ${b} a pak násobil ${a} - rovnice je ${a}(x + ${b}) = ${c}. Závorku odstraníš dělením ${a} na obou stranách.`,
+    // Řešitelská nápověda pro krokovou fázi - rovnici neprozrazuje (tu má
+    // ukázat až vrstva 3 ve fázi 'napiš rovnici').
+    hint: `Stroj napřed přičetl ${b} a pak násobil ${a} - závorku odstraníš dělením ${a} na obou stranách.`,
+    writeHint: `Pořadí je důležité: nejdřív 'přičte ${b}', takže x + ${b}, a pak celek 'vynásobí ${a}' - součet dej do závorky, ${a}(x + ${b}).`,
     seed,
     difficulty,
   });
@@ -197,6 +207,7 @@ function generateNthPart(prng, seed, difficulty) {
     right: expr(0, 1, b, 1),
     text: `Od celého čísla odečtu jeho ${NTH_PART[n]} a zůstane mi ${b}. Které číslo to je?`,
     hint: `${NTH_PART[n]} čísla x je x/${n}. Když ji od x odečteš, zůstane ${n - 1}/${n} z x - a to je ${b}.`,
+    writeHint: `'${NTH_PART[n]} čísla' je x/${n}. Odečítáš ji od celého čísla, tedy od x.`,
     seed,
     difficulty,
   });
@@ -225,6 +236,7 @@ function generateTwoParts(prng, seed, difficulty) {
     right: expr(0, 1, b, 1),
     text: `Od celého čísla odečtu jeho ${NTH_PART[n]} a ještě jeho ${NTH_PART[m]}. Zůstane mi ${b}. Které číslo to je?`,
     hint: 'Označ si číslo x a sečti, kolik z něj celkem odečítáš. Zbytek po obou odečteních je právě pravá strana rovnice.',
+    writeHint: `'${NTH_PART[n]} čísla' je x/${n} a '${NTH_PART[m]} čísla' je x/${m} - obě části odečítáš od x.`,
     seed,
     difficulty,
   });
@@ -243,6 +255,7 @@ function generateFractionPlus(prng, seed, difficulty) {
     right: expr(0, 1, b, 1),
     text: `Myslím si číslo. Když jeho ${NTH_PART[n]} zvětším o ${a}, dostanu ${b}. Které číslo si myslím?`,
     hint: `${NTH_PART[n]} čísla x je x/${n}. Nejdřív odečti ${a} z obou stran, pak obě strany vynásob ${n}.`,
+    writeHint: `'${NTH_PART[n]} čísla' je x/${n} a 'zvětším o ${a}' znamená + ${a}.`,
     seed,
     difficulty,
   });
@@ -266,9 +279,50 @@ function generateFractionMachine(prng, seed, difficulty) {
     right: expr(0, 1, out.n, out.d),
     text: `Početní stroj vstup vynásobí ${formatNumber(coef)} a pak přičte ${c}. Který vstup dá výstup ${formatNumber(out)}?`,
     hint: `Nejdřív odečti ${c} z obou stran. Pak se zbav zlomku u x: vynásob obě strany ${coef.d} a vyděl ${coef.n}.`,
+    writeHint: `Vstup je x. 'Vynásobí ${formatNumber(coef)}' znamená ${formatNumber(coef)}x a 'přičte ${c}' znamená + ${c}.`,
     seed,
     difficulty,
   });
+}
+
+/**
+ * Vstup rovnice podle obtížnosti (DEC-010): do obtížnosti 3 hráč skládá
+ * rovnici z dlaždic, od 4 ji píše volně na rozšířené klávesnici.
+ * Misní integrace (UCV-MISSION-003) podle toho vybírá builder.
+ */
+export function equationInputKind(difficulty) {
+  return difficulty <= 3 ? 'tiles' : 'free';
+}
+
+/**
+ * Operace početního stroje pro diagram šipek v zadání (UCV-MISSION-003):
+ * vstup -> operace -> výstup. Odvozuje se ze struktury úlohy (form +
+ * koeficienty rovnice), nikdy z českého textu. U úloh, které strojem
+ * nejsou (myslím si číslo), vrací null - diagram se nekreslí.
+ * @returns {{symbol: string, value: string}[]|null}
+ */
+export function machineOperations(problem) {
+  const left = problem.equation?.left;
+  if (!left) {
+    return null;
+  }
+  switch (problem.form) {
+    case 'machineTimesPlus':
+    case 'machineFractionTimesPlus':
+      // ax + b = c, případně (p/q)x + b = c: násobí a pak přičte.
+      return [
+        { symbol: '×', value: formatNumber(left.x) },
+        { symbol: '+', value: formatNumber(left.c) },
+      ];
+    case 'machinePlusTimes':
+      // a(x + b) = c: přičte a pak násobí činitelem před závorkou.
+      return [
+        { symbol: '+', value: formatNumber(left.c) },
+        { symbol: '×', value: formatNumber(left.f) },
+      ];
+    default:
+      return null;
+  }
 }
 
 /**

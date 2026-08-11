@@ -125,6 +125,21 @@ class StubElement {
     }
   }
 
+  /** Vloží uzly na začátek - boss obrazovka takhle staví HP lištu a bosse. */
+  prepend(...nodes) {
+    nodes.forEach((n, i) => {
+      n.parentNode = this;
+      this.childNodes.splice(i, 0, n);
+    });
+  }
+
+  insertBefore(node, reference) {
+    node.parentNode = this;
+    const at = this.childNodes.indexOf(reference);
+    this.childNodes.splice(at < 0 ? this.childNodes.length : at, 0, node);
+    return node;
+  }
+
   contains(node) {
     return node === this || this.descendants().includes(node);
   }
@@ -175,8 +190,13 @@ class StubElement {
     this.dispatch('click');
   }
 
+  /**
+   * Na ODPOJENÉM prvku je focus() v prohlížeči no-op - stejně jako
+   * scrollIntoView. Stub to musí modelovat, jinak by zeleně kryl dialog,
+   * který si volá focus() dřív, než se vloží do dokumentu.
+   */
   focus() {
-    if (currentDocument) {
+    if (currentDocument && this.isConnected) {
       currentDocument.activeElement = this;
     }
   }

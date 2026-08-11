@@ -443,24 +443,20 @@ p {
     height: 80px;
   }
 
+  /* Droid se na úzkém tabletu zmenší, ale nemizí - schovaná odměna je
+     stejná vada jako žádná odměna. */
+  .droid-art {
+    width: 34px;
+    height: 54px;
+  }
+
   .eval-stars {
     font-size: 3rem;
   }
 }
 
-/* Omezený pohyb: žádné animace, hvězdy vidět hned.
-   Patří sem i zatřesení po špatné validaci (dlaždice, volný zápis) -
-   sdílí klíčové snímky s avatarem, takže musí mlčet stejně jako on. */
-@media (prefers-reduced-motion: reduce) {
-  .eval-star.earned,
-  .crystal,
-  .avatar-correct,
-  .avatar-wrong,
-  .tile-boxes.is-shaking,
-  .free-eq-display.is-shaking {
-    animation: none;
-  }
-}
+/* Omezený pohyb řeší jediný souhrnný blok na konci souboru - výjimka
+   u každé animace zvlášť tady nefungovala (viz komentář tam). */
 
 /* Skrytý, ale pro screen reader čitelný prvek */
 .visually-hidden {
@@ -505,9 +501,10 @@ p {
 }
 
 .solution-panel {
+  --panel-pad: 1.5rem;
   background: var(--color-bg-panel);
   border-radius: var(--radius);
-  padding: 1.5rem;
+  padding: var(--panel-pad);
   max-width: 560px;
   width: 100%;
   display: flex;
@@ -522,6 +519,40 @@ p {
 .solution-panel h2 {
   margin: 0;
   font-size: 1.4rem;
+}
+
+/*
+ * Dílna a inventář: nadpis nahoře a patička se Zavřít dole stojí, roluje
+ * jen obsah mezi nimi. Dokud rolovat celý panel, bylo tlačítko Zavřít na
+ * konci obsahu - v dílně se čtyřmi skupinami (přes 1400 px) tedy 490-820 px
+ * pod okrajem tabletu. Na dotyku není Escape a klik na pozadí schválně
+ * nezavírá (dítě míří prstem nepřesně a nemá si dílnu zavřít omylem),
+ * takže hráč, kterého nenapadne rolovat, neměl z modálu žádný východ.
+ *
+ * Pořadí v DOM se nemění, Zavřít zůstává poslední - cyklení fokusu i Escape
+ * drží dál. Prohlížeč řešení tenhle modifikátor nemá: má krátký obsah
+ * pevné výšky (535 px) a roluje celý panel jako dosud.
+ */
+.solution-panel--framed {
+  overflow: hidden;
+}
+
+.solution-panel--framed .overlay-content {
+  overflow-y: auto;
+  min-height: 0; /* bez tohohle se flex položka nesmrskne a roloval by panel */
+}
+
+.overlay-footer {
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  justify-content: center;
+  /* Přes odsazení panelu až na jeho okraj, ať patička nikde neplave. */
+  margin: 0 calc(-1 * var(--panel-pad)) calc(-1 * var(--panel-pad));
+  padding: 0.75rem var(--panel-pad);
+  background: var(--color-bg-panel);
+  /* Naznačí, že obsah nad patičkou pokračuje. */
+  box-shadow: 0 -10px 12px -10px rgba(6, 10, 30, 0.95);
 }
 
 .solution-viz {
@@ -603,12 +634,6 @@ p {
   height: auto;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .balance-sway {
-    animation: none;
-  }
-}
-
 .fraction-bar-label {
   font-size: 1.25rem;
   font-weight: 700;
@@ -623,13 +648,6 @@ p {
 @keyframes hint-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 217, 77, 0.5); }
   50% { box-shadow: 0 0 0 8px rgba(255, 217, 77, 0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .btn-hint.attention {
-    animation: none;
-    background: rgba(255, 217, 77, 0.18);
-  }
 }
 
 /* --- Příběh, mapa, planety (fáze 6) --- */
@@ -765,17 +783,6 @@ p {
 .planet-strip-wrap.can-scroll-left::before,
 .planet-strip-wrap.can-scroll-right::after {
   opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .planet-strip {
-    scroll-behavior: auto;
-  }
-
-  .planet-strip-wrap::before,
-  .planet-strip-wrap::after {
-    transition: none;
-  }
 }
 
 /* Šipka leží nad přechodem u okraje, ne v řadě karet - jinak by na úzkém
@@ -929,11 +936,6 @@ p {
   to { transform: translateY(105vh) rotate(720deg); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .master-jedi { animation: none; }
-  .confetti { display: none; }
-}
-
 /* --- Odměny, crafting, boss (fáze 7) --- */
 
 /* Světlá čepel avatara */
@@ -945,6 +947,34 @@ p {
 @keyframes saber-glow {
   0%, 100% { filter: drop-shadow(0 0 3px #6fd3ff); }
   50% { filter: drop-shadow(0 0 9px #6fd3ff); }
+}
+
+/* Světelné brnění na postavičce (UCV-REWARD-003) - každý postavený kus
+   je na misi vidět hned, nečeká se na celou sadu. */
+.armor-helmet,
+.armor-cloak,
+.armor-gloves {
+  filter: drop-shadow(0 0 3px rgba(255, 217, 77, 0.7));
+}
+
+/* Droid po boku padawana. Stojí na stejné lince jako postavička, ale je
+   menší, aby nepřetlačil příklad - ten je pořád hlavní. */
+.droid-companion {
+  flex: none;
+  align-self: flex-end;
+}
+
+.droid-art {
+  animation: droid-hover 3s ease-in-out infinite;
+}
+
+.droid-eye {
+  filter: drop-shadow(0 0 4px #4da3ff);
+}
+
+@keyframes droid-hover {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
 }
 
 /* Boss souboj */
@@ -1032,8 +1062,15 @@ p {
   padding: 0.75rem 0.5rem;
 }
 
-.crystal-cell.empty {
-  opacity: 0.35;
+/* Prázdná barva zešedne krystalem, ne popiskem: jméno barvy a planeta jsou
+   návod, kam pro krystal letět. Průhlednost celé buňky (0.35) je srážela
+   na 2.05:1 - stejná past jako u zamčených dílů v dílně. */
+.crystal-cell.empty .crystal {
+  opacity: 0.3;
+}
+
+.crystal-cell.empty .crystal-count {
+  color: var(--color-text-dim);
 }
 
 .crystal-cell .crystal {
@@ -1079,6 +1116,44 @@ p {
   margin: 0;
 }
 
+/* Skupiny dílů (UCV-REWARD-003): meč, loď, droid, brnění. Každá má vlastní
+   akcent, aby hráč poznal, do které skupiny řádek patří, i bez hlavičky. */
+.part-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  border-left: 4px solid var(--part-accent, var(--color-accent));
+  padding-left: 0.6rem;
+}
+
+.part-group-sword { --part-accent: #6fd3ff; }
+.part-group-ship { --part-accent: #c3cbe8; }
+.part-group-droid { --part-accent: #4da3ff; }
+.part-group-armor { --part-accent: #ffd94d; }
+
+/* Zamčená skupina zešedne akcentem (rámeček + nadpis), ne průhledností.
+   Průhlednost skupiny se násobila s průhledností řádku (0.75 × 0.65 =
+   0.49) a text spadl pod čitelnost: hláška '🔒 Postav nejdřív droida'
+   měla 4.34:1 a popis dílu 2.7:1 - a přesně tyhle věty musí dítě přečíst,
+   aby vědělo, co dělat. Šedá níž má proti panelu 5.83:1. */
+.part-group.locked {
+  --part-accent: #8f98bd;
+}
+
+.part-group-title {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--part-accent, var(--color-text));
+  text-align: left;
+}
+
+.part-group-hint {
+  margin: 0;
+  color: var(--color-text-dim);
+  font-size: 0.9rem;
+  text-align: left;
+}
+
 .parts-list {
   display: flex;
   flex-direction: column;
@@ -1095,17 +1170,36 @@ p {
   flex-wrap: wrap;
 }
 
+/* Ilustrace dílu - malá, ale ne dekorace navíc: dítě, které ještě váhá
+   se čtením, pozná podle ní, co staví. */
+.part-art {
+  width: 40px;
+  height: 40px;
+  flex: none;
+}
+
+/* Díl bez ilustrace (chyba dat) musí být vidět na první pohled. */
+.part-art-missing {
+  outline: 2px solid #ff4d4d;
+}
+
 .part-row.crafted {
   outline: 2px solid #7ee08c;
 }
 
+/* Tři stavy řádku se rozeznají rámečkem, ne sytostí: plná zelená = hotovo,
+   přerušovaná šedá = zatím ne, žádný = můžeš stavět. Ztlumit nejde ani
+   ilustrace - dítě, které ještě váhá se čtením, pozná podle ní, co staví,
+   takže platí práh 3:1 pro netextovou grafiku (šedá níž má 3.3:1 a při
+   ztlumení na 0.55 klesaly tvary dílu až k 1.07:1). */
 .part-row.locked {
-  opacity: 0.65;
+  outline: 2px dashed #5a6494;
 }
 
 .part-name {
   font-weight: 700;
-  min-width: 120px;
+  min-width: 100px;
+  text-align: left;
 }
 
 .part-requirements {
@@ -1124,10 +1218,12 @@ p {
   font-size: 0.85rem;
 }
 
+/* Dotykový cíl 56 px platí i v dílně - tlačítko 'Postavit' mačká dítě
+   prstem na tabletu stejně jako všechno ostatní. */
 .btn-craft {
   padding: 0.4rem 1.25rem;
   font-size: 1rem;
-  min-height: 48px;
+  min-height: var(--touch-target);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1933,4 +2029,44 @@ p {
   font-weight: 400;
   text-align: right;
   opacity: 0.75;
+}
+
+/* ==================================================================
+   OMEZENÝ POHYB - jediné místo v souboru, patří na jeho KONEC.
+   Za tenhle blok už nic nepiš.
+   ==================================================================
+   Dřív měla každá animace vlastní výjimku, jenže ty výjimky stály v
+   souboru PŘED pravidly, která animace zapínají (.saber-blade, .droid-art,
+   .tile-boxes.is-shaking, .free-eq-display.is-shaking). @media specificitu
+   nezvyšuje, takže vyhrál pozdější zápis a hráč s vypnutými animacemi je
+   dostal stejně - změřeno v prohlížeči, getComputedStyle('.droid-art')
+   .animationName vracel 'droid-hover'. Zápis vypadal správně a neplatil.
+
+   Proto jeden souhrnný zápis přes všechny prvky, a s !important: platí bez
+   ohledu na pořadí v souboru, tedy i na animaci, kterou sem někdo přidá
+   příště. Nikdo už nemusí na výjimku pamatovat - a nemá ji kam napsat
+   špatně. Hlídá to test 'omezený pohyb doopravdy vypne každou animaci',
+   který kaskádu počítá, ne hledá selektor v textu.
+   Přechody (transition) mizí taky - posun avatara nebo bosse je pohyb
+   stejně jako klíčové snímky. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Co vypnutí pohybu samo nezařídí: */
+
+  /* Konfety jsou jen padání - bez animace by zůstala sprška teček v rohu. */
+  .confetti {
+    display: none;
+  }
+
+  /* Pobízející nápověda pulzovala; klidné zvýraznění řekne totéž beze změn. */
+  .btn-hint.attention {
+    background: rgba(255, 217, 77, 0.18);
+  }
 }

@@ -11,7 +11,7 @@ import { createBrowserSaveStore } from './engine/save.js';
 import { createScreenMachine, initialScreenFor, SCREENS } from './engine/screens.js';
 import { createMission, createBossMission } from './engine/mission.js';
 import { applyMissionResult } from './engine/progress.js';
-import { hasSword } from './content/crafting.js';
+import { cosmeticsFor } from './content/crafting.js';
 import { createIntroScreen } from './ui/introScreen.js';
 import { createMapScreen } from './ui/mapScreen.js';
 import { createMissionScreen } from './ui/missionScreen.js';
@@ -92,7 +92,9 @@ function render(screen, context = {}) {
       : createMission({ ...missionConfig, seed: missionSeed(context.missionId) });
     const screen_ = createMissionScreen(el, {
       mission,
-      hasSword: hasSword(state),
+      // Odměny z dílny se čtou při každém startu mise - hráč, který si mezi
+      // misemi postavil droida, ho hned uvidí (UCV-REWARD-003).
+      cosmetics: cosmeticsFor(state),
       onExit: () => machine.go(SCREENS.MAP),
       onFinish: (summary) => {
         const granted = applyMissionResult(state, summary);

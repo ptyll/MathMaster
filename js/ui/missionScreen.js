@@ -6,6 +6,7 @@
 
 import { createAnswerInput } from './answerInput.js';
 import { createAvatar, createBossArt } from './avatar.js';
+import { createDroidCompanion } from './craftArt.js';
 import { createSolutionViewer } from './solutionViewer.js';
 import { createStepSession } from '../engine/stepSession.js';
 import { createStepInput } from './stepInput.js';
@@ -68,9 +69,11 @@ export function summaryWithCarriedErrors(summary, carried) {
  * @param {object} options.mission instance z createMission()
  * @param {() => void} options.onExit přerušení mise (návrat na mapu, postup se zahodí)
  * @param {(summary: object) => void} options.onFinish dokončení mise
+ * @param {object} [options.cosmetics] postavené odměny z dílny (crafting.js
+ *        cosmeticsFor): meč v ruce, droid po boku, kusy brnění
  * @returns {{ destroy: () => void }}
  */
-export function createMissionScreen(container, { mission, onExit, onFinish, hasSword = false }) {
+export function createMissionScreen(container, { mission, onExit, onFinish, cosmetics = {} }) {
   const isBoss = !!mission.isBoss;
   const root = document.createElement('div');
   root.className = 'mission' + (isBoss ? ' boss-fight' : '');
@@ -108,7 +111,10 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
   // --- Avatar + příklad ---
   const stage = document.createElement('div');
   stage.className = 'mission-stage';
-  const avatar = createAvatar({ saber: hasSword });
+  const avatar = createAvatar({ saber: !!cosmetics.saber, armor: cosmetics.armor ?? {} });
+  // Postavený droid (UCV-REWARD-003) letí s hráčem na misi - odměna z dílny
+  // musí být vidět tam, kde hráč tráví čas, ne jen v dílně.
+  const droid = cosmetics.droid ? createDroidCompanion() : null;
 
   const card = document.createElement('div');
   card.className = 'mission-card';
@@ -120,6 +126,9 @@ export function createMissionScreen(container, { mission, onExit, onFinish, hasS
   feedback.setAttribute('aria-live', 'polite');
   card.append(exerciseEl, feedback);
   stage.append(avatar.element, card);
+  if (droid) {
+    stage.appendChild(droid);
+  }
 
   // --- Kroky řešení / nápověda (text) ---
   const stepsPanel = document.createElement('div');

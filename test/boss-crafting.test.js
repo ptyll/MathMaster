@@ -3,20 +3,26 @@ import assert from 'node:assert/strict';
 
 import { createBossMission } from '../js/engine/mission.js';
 import {
+  GROUPS,
   PARTS,
   crystalCount,
   isCrafted,
   hasSword,
-  hasShip,
+  hasDroid,
   isUnlocked,
+  isGroupComplete,
+  groupProgress,
+  partsOfGroup,
   missingCrystals,
   canCraft,
   craft,
+  cosmeticsFor,
 } from '../js/content/crafting.js';
 import { applyMissionResult } from '../js/engine/progress.js';
-import { isPlanetUnlocked } from '../js/engine/unlock.js';
+import { isPlanetUnlocked, isMasterJedi } from '../js/engine/unlock.js';
 import { createDefaultState } from '../js/engine/state.js';
-import { PLANETS } from '../js/content/planets.js';
+import { createSaveStore } from '../js/engine/save.js';
+import { PLANETS, CORE_PLANETS } from '../js/content/planets.js';
 
 function testBoss() {
   return createBossMission({
@@ -145,11 +151,235 @@ test('dvojitá stavba stejné části selže', () => {
   assert.equal(craft(state, 'sword-hilt'), false);
 });
 
-test('hasShip vyžaduje všechny části lodi', () => {
+test('dokončená skupina se pozná z postavených dílů', () => {
   const state = stateWithCrystals([['modrý', 3], ['bílý', 3], ['zelený', 3], ['červený', 3], ['fialový', 3]]);
-  for (const part of PARTS) {
+  for (const part of PARTS.filter((p) => p.group === 'sword' || p.group === 'ship')) {
     craft(state, part.id);
   }
   assert.ok(hasSword(state));
-  assert.ok(hasShip(state));
+  assert.ok(isGroupComplete(state, 'ship'));
+});
+
+/* --- Droid a světelné brnění (UCV-REWARD-003) ----------------------------- */
+
+/** Barvy krystalů planet, které patří k dané skupině dílů - odvozeno z dat. */
+function colorsOfParts(groupId) {
+  return [...new Set(partsOfGroup(groupId).flatMap((p) => Object.keys(p.requires)))];
+}
+
+/** Planeta, ze které barva krystalu pochází. */
+function planetOfColor(color) {
+  return PLANETS.find((p) => p.crystalColor === color);
+}
+
+/** Stav se všemi krystaly, aby stavbu blokovalo jen odemykání skupin. */
+function richState() {
+  return stateWithCrystals(PLANETS.map((p) => [p.crystalColor, 9]));
+}
+
+function buildGroup(state, groupId) {
+  for (const part of partsOfGroup(groupId)) {
+    assert.ok(craft(state, part.id), `${part.id} se nepostavil`);
+  }
+}
+
+test('TDD-REWARD-003-A: řetěz meč -> loď -> droid -> brnění se odemyká po skupinách', () => {
+  const state = richState();
+  const droidHead = PARTS.find((p) => p.id === 'droid-head');
+  const helmet = PARTS.find((p) => p.id === 'armor-helmet');
+
+  // Na začátku je odemčený jen meč - droid ani brnění nejdou postavit,
+  // i když má hráč všechny krystaly světa.
+  assert.equal(isUnlocked(state, droidHead), false);
+  assert.equal(canCraft(state, droidHead), false);
+  assert.equal(craft(state, 'droid-head'), false, 'zamčený díl se nesmí dát postavit');
+
+  buildGroup(state, 'sword');
+  assert.equal(isUnlocked(state, droidHead), false, 'droid se odemyká lodí, ne mečem');
+
+  buildGroup(state, 'ship');
+  assert.ok(isUnlocked(state, droidHead), 'po lodi má být droid odemčený');
+  assert.equal(isUnlocked(state, helmet), false, 'brnění čeká na droida');
+
+  // Rozestavěný droid brnění neodemkne - musí stát celý.
+  assert.ok(craft(state, 'droid-head'));
+  assert.ok(craft(state, 'droid-body'));
+  assert.equal(hasDroid(state), false);
+  assert.equal(isUnlocked(state, helmet), false, 'dva ze tří dílů droida nestačí');
+  assert.deepEqual(groupProgress(state, 'droid'), { built: 2, total: 3 });
+
+  assert.ok(craft(state, 'droid-legs'));
+  assert.ok(hasDroid(state));
+  assert.ok(isUnlocked(state, helmet), 'hotový droid odemyká brnění');
+
+  buildGroup(state, 'armor');
+  assert.ok(isGroupComplete(state, 'armor'));
+  assert.ok(GROUPS.every((g) => isGroupComplete(state, g.id)), 'dílna má být hotová');
+});
+
+test('TDD-REWARD-003-B: stavba droida spotřebuje krystaly a chybějící pojmenuje', () => {
+  const state = stateWithCrystals([['oranžový', 2], ['tyrkysový', 2]]);
+  // Odemčení řešíme přímo přes postavené díly - tady jde o krystaly.
+  state.inventory.shipParts = PARTS.filter((p) => p.group === 'sword' || p.group === 'ship').map((p) => p.id);
+
+  assert.ok(craft(state, 'droid-head'));
+  assert.equal(crystalCount(state, 'oranžový'), 0, 'krystaly se mají spotřebovat');
+
+  const body = PARTS.find((p) => p.id === 'droid-body');
+  assert.equal(canCraft(state, body), false);
+  assert.deepEqual(missingCrystals(state, body), { 'žlutý': 1 });
+
+  // Nedokončený droid nesmí zmizet z inventáře ani ze stavu při neúspěchu.
+  assert.equal(craft(state, 'droid-body'), false);
+  assert.equal(crystalCount(state, 'tyrkysový'), 2);
+  assert.equal(isCrafted(state, 'droid-body'), false);
+});
+
+test('TDD-REWARD-003-C: droid stojí krystaly mix planet, brnění krystaly slovních planet', () => {
+  // Zdroj barev se odvozuje z PLANETS, ne z výčtu v testu: kdyby někdo
+  // přebarvil planetu, spadne tohle, ne až oko hráče.
+  const endgame = PLANETS.filter((p) => p.tier === 'endgame');
+  const isWordPlanet = (planet) => planet.missions.every((m) => m.topic === 'wordProblems');
+  const mixColors = endgame.filter((p) => !isWordPlanet(p)).map((p) => p.crystalColor);
+  const wordColors = endgame.filter(isWordPlanet).map((p) => p.crystalColor);
+
+  assert.deepEqual(colorsOfParts('droid').sort(), [...mixColors].sort());
+  assert.deepEqual(colorsOfParts('armor').sort(), [...wordColors].sort());
+
+  for (const groupId of ['droid', 'armor']) {
+    for (const part of partsOfGroup(groupId)) {
+      for (const [color, count] of Object.entries(part.requires)) {
+        assert.ok(planetOfColor(color), `${part.id}: barva ${color} není z žádné planety`);
+        assert.ok(count >= 1 && count <= 2, `${part.id}: ${color} stojí ${count} krystalů (má být 1-2)`);
+      }
+    }
+  }
+});
+
+test('TDD-REWARD-003-D: na každý díl se dá vydělat i bez trojhvězdičkových bonusů', () => {
+  // Za první dokončení mise je jeden krystal, bonus až za tři hvězdy.
+  // Kdyby díl stál víc, než planeta vůbec dá, byla by dílna neprůchodná.
+  const needed = {};
+  for (const part of PARTS) {
+    for (const [color, count] of Object.entries(part.requires)) {
+      needed[color] = (needed[color] ?? 0) + count;
+    }
+  }
+  for (const [color, count] of Object.entries(needed)) {
+    const planet = planetOfColor(color);
+    assert.ok(planet, `barva ${color} nemá planetu`);
+    assert.ok(
+      count <= planet.missions.length,
+      `${color}: díly chtějí ${count} krystalů, ale ${planet.name} jich dá jen ${planet.missions.length}`
+    );
+  }
+});
+
+test('TDD-REWARD-003-E: hotová dílna neovlivní obtížnost, odemykání planet ani tituly', () => {
+  const state = richState();
+  for (const group of GROUPS) {
+    buildGroup(state, group.id);
+  }
+  assert.ok(isGroupComplete(state, 'armor'));
+  // Postup po mapě i titul se počítají výhradně z odehraných misí.
+  assert.equal(isPlanetUnlocked(state, PLANETS, 1), false);
+  assert.equal(isMasterJedi(state, CORE_PLANETS), false);
+  assert.deepEqual(state.planets, []);
+  // A crafting nesahá do statistik, ze kterých se bere adaptivní obtížnost.
+  assert.equal(state.stats.totalSolved, 0);
+  assert.equal(state.stats.totalAttempts, 0);
+});
+
+test('TDD-REWARD-003-F: starý save s hotovým mečem i lodí má droida rovnou odemčeného', () => {
+  // Skutečný save předchozí verze (schéma v2, ještě bez tématu wordProblems),
+  // protáhnutý opravdovým save modulem - ne ručně poskládaný objekt.
+  const legacySave = {
+    version: 2,
+    profile: { name: 'Ela', createdAt: '2025-11-03T10:00:00.000Z' },
+    planets: CORE_PLANETS.map((planet) => ({
+      planetId: planet.id,
+      unlockedLevels: planet.missions.length,
+      starsPerLevel: Object.fromEntries(planet.missions.map((m) => [m.id, 3])),
+      bestStreak: 4,
+    })),
+    inventory: {
+      crystals: [{ color: 'modrý', count: 2 }],
+      shipParts: [
+        'sword-hilt', 'sword-emitter', 'sword-blade', 'sword-heart',
+        'ship-hull', 'ship-engine', 'ship-cockpit', 'ship-wings',
+      ],
+    },
+    stats: {
+      totalSolved: 120,
+      totalAttempts: 150,
+      missionsCompleted: 18,
+      totalTimeMs: 3600000,
+      perTopic: {
+        equations: { solved: 60, attempts: 70, lastErrors: [], errors: { signError: 3 } },
+        fractions: { solved: 40, attempts: 50, lastErrors: [], errors: {} },
+        fractionEquations: { solved: 20, attempts: 30, lastErrors: [], errors: {} },
+      },
+    },
+    settings: { sound: true, hintsLevel: 'full' },
+  };
+  const storage = new Map();
+  const store = createSaveStore({
+    getItem: (k) => storage.get(k) ?? null,
+    setItem: (k, v) => storage.set(k, String(v)),
+    removeItem: (k) => storage.delete(k),
+  });
+  storage.set('mathmaster-save-v1', JSON.stringify(legacySave));
+
+  const state = store.load();
+  assert.ok(state, 'starý save se musí načíst');
+  assert.ok(hasSword(state) && isGroupComplete(state, 'ship'), 'postup z minulé verze zůstává');
+
+  // Tohle je jádro zpětné kompatibility: droid se odemyká z postavených dílů,
+  // takže hráč po aktualizaci hry nemusí nic dohánět.
+  for (const part of partsOfGroup('droid')) {
+    assert.ok(isUnlocked(state, part), `${part.id} má být pro starý save odemčený`);
+  }
+  assert.equal(hasDroid(state), false, 'droida ještě nikdo nepostavil');
+  for (const part of partsOfGroup('armor')) {
+    assert.equal(isUnlocked(state, part), false, 'brnění čeká na droida i po aktualizaci');
+  }
+  // A hotový meč se dál propisuje na misi.
+  assert.deepEqual(cosmeticsFor(state), {
+    saber: true,
+    droid: false,
+    armor: { helmet: false, cloak: false, gloves: false },
+  });
+});
+
+test('TDD-REWARD-003-G: save z verze 1 se stejným postupem droida taky odemkne', () => {
+  const v1Save = {
+    version: 1,
+    profile: { name: 'Ela', createdAt: '2025-09-01T08:00:00.000Z' },
+    planets: [],
+    inventory: {
+      crystals: [],
+      shipParts: [
+        'sword-hilt', 'sword-emitter', 'sword-blade', 'sword-heart',
+        'ship-hull', 'ship-engine', 'ship-cockpit', 'ship-wings',
+      ],
+    },
+    stats: {
+      totalSolved: 10,
+      totalAttempts: 12,
+      perTopic: { equations: { solved: 10, attempts: 12, lastErrors: [], errors: {} } },
+    },
+    settings: { sound: true, hintsLevel: 'full' },
+  };
+  const storage = new Map();
+  const store = createSaveStore({
+    getItem: (k) => storage.get(k) ?? null,
+    setItem: (k, v) => storage.set(k, String(v)),
+    removeItem: (k) => storage.delete(k),
+  });
+  storage.set('mathmaster-save-v1', JSON.stringify(v1Save));
+
+  const state = store.load();
+  assert.ok(state, 'save verze 1 se musí zmigrovat, ne zahodit');
+  assert.equal(state.version, 2);
+  assert.ok(isUnlocked(state, PARTS.find((p) => p.id === 'droid-head')));
 });

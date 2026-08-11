@@ -8,6 +8,9 @@
  * Grafika i názvy jsou vlastní (DEC-006) - žádné chráněné assety.
  *
  * tier: 'core' = původních pět planet, 'endgame' = rozšíření (DEC-009).
+ * nameGenitive: 2. pád jména do vět typu 'krystal z Bespinu' (UCV-REWARD-003).
+ * Čeština ho z 1. pádu nespočítá (Kamino -> Kamina, Hvězda smrti -> Hvězdy
+ * smrti), takže patří k datům planety - ne do výčtu v obrazovce dílny.
  * Odemykání je jeden nepřerušený řetěz, takže starý uložený postup platí
  * beze změny - hráč s dokončeným Coruscantem má Bespin rovnou odemčený.
  *
@@ -26,6 +29,7 @@ export const PLANETS = [
     id: 'tatooine',
     tier: 'core',
     name: 'Tatooine',
+    nameGenitive: 'Tatooinu',
     subtitle: 'Pouštní planeta - jednoduché rovnice',
     crystalColor: 'modrý',
     art: 'desert',
@@ -40,6 +44,7 @@ export const PLANETS = [
     id: 'hoth',
     tier: 'core',
     name: 'Hoth',
+    nameGenitive: 'Hothu',
     subtitle: 'Ledová planeta - rovnice s násobením',
     crystalColor: 'bílý',
     art: 'ice',
@@ -54,6 +59,7 @@ export const PLANETS = [
     id: 'dagobah',
     tier: 'core',
     name: 'Dagobah',
+    nameGenitive: 'Dagobahu',
     subtitle: 'Bažinatá planeta - zlomky',
     crystalColor: 'zelený',
     art: 'swamp',
@@ -68,6 +74,7 @@ export const PLANETS = [
     id: 'deathstar',
     tier: 'core',
     name: 'Hvězda smrti',
+    nameGenitive: 'Hvězdy smrti',
     subtitle: 'Bitevní stanice - rovnice se zlomky',
     crystalColor: 'červený',
     art: 'station',
@@ -81,6 +88,7 @@ export const PLANETS = [
     id: 'coruscant',
     tier: 'core',
     name: 'Coruscant',
+    nameGenitive: 'Coruscantu',
     subtitle: 'Hlavní město - finální mix všeho',
     crystalColor: 'fialový',
     art: 'city',
@@ -94,6 +102,7 @@ export const PLANETS = [
     id: 'bespin',
     tier: 'endgame',
     name: 'Bespin',
+    nameGenitive: 'Bespinu',
     subtitle: 'Město v oblacích - rovnice a zlomky',
     crystalColor: 'oranžový',
     art: 'clouds',
@@ -108,6 +117,7 @@ export const PLANETS = [
     id: 'kamino',
     tier: 'endgame',
     name: 'Kamino',
+    nameGenitive: 'Kamina',
     subtitle: 'Oceánská planeta - zlomky a rovnice se zlomky',
     crystalColor: 'tyrkysový',
     art: 'ocean',
@@ -122,6 +132,7 @@ export const PLANETS = [
     id: 'mustafar',
     tier: 'endgame',
     name: 'Mustafar',
+    nameGenitive: 'Mustafaru',
     subtitle: 'Lávová planeta - všechno dohromady',
     crystalColor: 'žlutý',
     art: 'lava',
@@ -138,6 +149,7 @@ export const PLANETS = [
     id: 'endor',
     tier: 'endgame',
     name: 'Endor',
+    nameGenitive: 'Endoru',
     subtitle: 'Lesní měsíc - slovní úlohy',
     crystalColor: 'růžový',
     art: 'forest',
@@ -152,6 +164,7 @@ export const PLANETS = [
     id: 'geonosis',
     tier: 'endgame',
     name: 'Geonosis',
+    nameGenitive: 'Geonosisu',
     subtitle: 'Rudé kaňony - slovní úlohy',
     crystalColor: 'bronzový',
     art: 'canyon',
@@ -166,6 +179,7 @@ export const PLANETS = [
     id: 'dathomir',
     tier: 'endgame',
     name: 'Dathomir',
+    nameGenitive: 'Dathomiru',
     subtitle: 'Temná planeta - slovní úlohy',
     crystalColor: 'černý',
     art: 'dark',

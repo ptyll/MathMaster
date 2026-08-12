@@ -10,7 +10,7 @@ installDom(); // musí být dřív než import obrazovek - ty sahají na documen
 const { PLANETS, CORE_PLANETS } = await import('../js/content/planets.js');
 const { createMapScreen } = await import('../js/ui/mapScreen.js');
 const { createInventoryOverlay } = await import('../js/ui/workshopScreen.js');
-const { hasPlanetArt, createPlanetArt } = await import('../js/ui/planetArt.js');
+const { createPlanetArt } = await import('../js/ui/planetArt.js');
 const { createDefaultState } = await import('../js/engine/state.js');
 const { focusNewScreen } = await import('../js/ui/dialogA11y.js');
 const { createSaveStore, SAVE_KEY } = await import('../js/engine/save.js');
@@ -338,10 +338,69 @@ test('TDD-MAP-002-L: posun šipkou respektuje vypnuté animace', () => {
   assert.deepEqual(povoleno, ['auto', 'smooth'], 'reduced-motion nesmí dostat plynulý posun');
 });
 
+/**
+ * Otisk vykreslené ilustrace: tvary a jejich atributy v pořadí, jak se kreslí.
+ * Nic náhodného, takže dvě volání téhož druhu dají shodný řetězec a dva různé
+ * druhy se rozejdou.
+ */
+function artFingerprint(artKind) {
+  return createPlanetArt(artKind)
+    .descendants()
+    .map((el) => `${el.tagName}(${[...el.attributes].map(([k, v]) => `${k}=${v}`).sort().join(' ')})`)
+    .join('|');
+}
+
+/** Druh, na který `js/ui/planetArt.js` mlčky spadne u neznámého artu (`ART[artKind] ?? ART.desert`). */
+const FALLBACK_ART = 'desert';
+
 test('každá planeta má vlastní ilustraci a barvu krystalu v CSS', () => {
   const css = readFileSync(new URL('../css/main.css', import.meta.url), 'utf8');
+
+  // Planeta bez vlastní ilustrace se pozná dvěma způsoby a test drží oba: buď se
+  // nakreslí jako poušť (createPlanetArt na neznámý druh tiše spadne na ART.desert),
+  // nebo se nenakreslí nic (druh se trefil do zděděného členu Object.prototype).
+  // Otisk fallbacku je měřítko pro první případ, prázdný otisk pro druhý.
+  // To, že tohle volání nespadlo na `draw is not a function`, zároveň dokazuje,
+  // že samo ART.desert existuje.
+  const fallback = artFingerprint('__druh, který v ART není__');
+
+  // Bez tohohle by porovnání níž mohlo měřit vakuum: kdyby otisk rozlišoval i dvě
+  // shodné kresby, vyšla by jako "vlastní ilustrace" i planeta, která se kreslí jako poušť.
+  assert.equal(
+    artFingerprint('__ani tenhle druh v ART není__'),
+    fallback,
+    'otisk rozlišuje i dvě shodné kresby - porovnání s fallbackem by nic neměřilo'
+  );
+
   for (const planet of PLANETS) {
-    assert.ok(hasPlanetArt(planet.art), `${planet.id}: chybí ilustrace '${planet.art}'`);
+    const fingerprint = artFingerprint(planet.art);
+
+    // `ART[artKind]` čte i ZDĚDĚNÉ členy Object.prototype. Druh 'toString' nebo
+    // 'constructor' tam najde funkci, `draw(svg)` ji zavolá, nespadne - a nenakreslí nic.
+    // Od fallbacku by se takový otisk lišil, takže bez téhle věty by planeta s prázdnou
+    // ilustrací prošla jako planeta s vlastní. Nakreslit tvar umí jen funkce z ART,
+    // takže neprázdný otisk tu cestu zavírá celou.
+    assert.notEqual(
+      fingerprint,
+      '',
+      `${planet.id}: ilustrace '${planet.art}' nekreslí nic - druh v ART není, jen se trefil do Object.prototype`
+    );
+
+    if (planet.art === FALLBACK_ART) {
+      // Poušť je zároveň cíl fallbacku, takže se s ním otiskem shodovat MUSÍ;
+      // kdyby se rozešla, kreslí se fallback něčím jiným a tenhle test už neměří to, co tvrdí.
+      assert.equal(
+        fingerprint,
+        fallback,
+        `${planet.id}: '${planet.art}' se nekreslí jako fallback - zkontroluj ART v js/ui/planetArt.js`
+      );
+    } else {
+      assert.notEqual(
+        fingerprint,
+        fallback,
+        `${planet.id}: chybí ilustrace '${planet.art}' - kreslí se jako poušť`
+      );
+    }
     assert.ok(
       css.includes(`.crystal-${planet.crystalColor} `),
       `${planet.id}: chybí styl .crystal-${planet.crystalColor}`

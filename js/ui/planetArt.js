@@ -119,14 +119,6 @@ const ART = {
   },
 };
 
-/**
- * Má druh planety vlastní ilustraci? Neznámý druh se tiše kreslí jako poušť,
- * takže bez téhle kontroly by nová planeta bez artu prošla i revizí.
- */
-export function hasPlanetArt(artKind) {
-  return Object.hasOwn(ART, artKind);
-}
-
 /** Vykreslí blocky planetu (dekorativní - jméno nese tlačítko). locked = šedá + zámek. */
 export function createPlanetArt(artKind, { locked = false } = {}) {
   const svg = svgEl('svg', { viewBox: '0 0 100 100', class: 'planet-art', 'aria-hidden': 'true' });

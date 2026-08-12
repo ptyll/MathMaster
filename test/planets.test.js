@@ -118,6 +118,14 @@ test('každá planeta má vlastní barvu krystalu (inventář i crafting je podl
   assert.equal(new Set(colors).size, colors.length, `duplicitní barva: ${colors.join(', ')}`);
 });
 
+test('id planety je unikátní - stav i postup se hledají podle něj', () => {
+  // Uložený stav (state.planets), odemykání i mapa se planety ptají podle id.
+  // Dvě planety s týmž id by sdílely jeden záznam o postupu, takže by se
+  // odemkly i dohrály naráz - a na mapě by stály dvě stejné karty.
+  const ids = PLANETS.map((p) => p.id);
+  assert.equal(new Set(ids).size, ids.length, `duplicitní id planety: ${ids.join(', ')}`);
+});
+
 test('endgame planety: témata a rozsahy obtížnosti podle zadání', () => {
   const expected = {
     bespin: { topics: ['equations', 'fractions'], range: [3, 5] },

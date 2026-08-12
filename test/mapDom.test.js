@@ -372,6 +372,18 @@ test('každá planeta má vlastní ilustraci a barvu krystalu v CSS', () => {
     'otisk rozlišuje i dvě shodné kresby - porovnání s fallbackem by nic neměřilo'
   );
 
+  // Otisk -> planeta, která ho zabrala jako první. Vlastní záznam v ART totiž
+  // ještě neznamená vlastní OBRÁZEK, a tvrzení uvnitř cyklu se ptají každé
+  // planety zvlášť: proti fallbacku a proti prázdnu.
+  //
+  // Co tím přibývá (měřeno mutacemi, ne odhadem): dvě planety s TÝMŽ druhem
+  // ('ice' podruhé) a alias na druh, který NENÍ fallback (`ART.frost = ART.ice`).
+  // Obojí projde všemi třemi tvrzeními výš - záznam existuje, něco kreslí a od
+  // pouště se to liší - a chytí to teprve porovnání planet mezi sebou.
+  // Alias na POUŠŤ (`ART.junkyard = ART.desert`) sem nedojde: toho si všimne
+  // dřív tvrzení proti fallbacku, protože 'junkyard' není FALLBACK_ART.
+  const podleOtisku = new Map();
+
   for (const planet of PLANETS) {
     const fingerprint = artFingerprint(planet.art);
 
@@ -401,6 +413,42 @@ test('každá planeta má vlastní ilustraci a barvu krystalu v CSS', () => {
         `${planet.id}: chybí ilustrace '${planet.art}' - kreslí se jako poušť`
       );
     }
+
+    // Porovnání planet mezi sebou stojí na tom, že týž druh dá POKAŽDÉ týž
+    // otisk. Tvrzení nad cyklem to dokazuje jen o poušti (oba neznámé druhy
+    // padnou na ART.desert), takže tady se to ptá o každém druhu zvlášť:
+    // kdyby nová ilustrace míchala do atributů náhodu, otisky by se nikdy
+    // nepotkaly a porovnání níž by mlčelo nad dvěma stejnými planetami.
+    assert.equal(
+      artFingerprint(planet.art),
+      fingerprint,
+      `${planet.id}: ilustrace '${planet.art}' kreslí pokaždé jinak - porovnání planet mezi sebou by nic neměřilo`
+    );
+
+    // Různost NAVZÁJEM. Poušť se s fallbackem shodovat MUSÍ, ale s druhou
+    // PLANETOU ne - proto se porovnává jen mezi planetami.
+    //
+    // Měří se SHODA DO POSLEDNÍHO BAJTU, ne to, co dítě rozezná okem - a je to
+    // tak schválně. Otisk nese tvary I atributy právě proto, aby druh lišící se
+    // jen barvami platil za vlastní ilustraci; osekat ho na kostru tvarů by
+    // z takového druhu udělalo planý poplach.
+    //
+    // Přísnější práh na barvu sem proto nepatří a dvě měření k tomu: kontrast
+    // (jako u dvojice endor/dagobah výš) měří jen světlost, takže napříč
+    // odstíny neměří odlišnost vůbec - deathstar (#8a90a8, šedá) a kamino
+    // (#2f9fa8, tyrkysová) mají 1,00:1 a nesplete si je nikdo; plošný práh by
+    // dnes vyrobil čtyři plané poplachy a žádný nález. Vnímanou odlišnost měří
+    // ΔE a tam má dnešních jedenáct planet nejmenší rozestup 12,5 (tatooine vs
+    // bespin, obě pískové) při prahu rozeznatelnosti kolem 2,3 - tedy pohodlně.
+    const stejna = podleOtisku.get(fingerprint);
+    assert.equal(
+      stejna,
+      undefined,
+      stejna && stejna.id === planet.id
+        ? `planeta ${planet.id} je v PLANETS dvakrát - mapa ji vykreslí jako dvě karty`
+        : stejna && `${planet.id} ('${planet.art}') se kreslí úplně stejně jako ${stejna.id} ('${stejna.art}')`
+    );
+    podleOtisku.set(fingerprint, planet);
     assert.ok(
       css.includes(`.crystal-${planet.crystalColor} `),
       `${planet.id}: chybí styl .crystal-${planet.crystalColor}`

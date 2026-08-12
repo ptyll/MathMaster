@@ -14,6 +14,8 @@ const { hasPlanetArt, createPlanetArt } = await import('../js/ui/planetArt.js');
 const { createDefaultState } = await import('../js/engine/state.js');
 const { focusNewScreen } = await import('../js/ui/dialogA11y.js');
 const { createSaveStore } = await import('../js/engine/save.js');
+const { TITLES, titleFor, completedPlanetCount } = await import('../js/engine/titles.js');
+const { titleLadderSteps, planetWord, planetWordFrom } = await import('../js/ui/titleLadder.js');
 
 /** Stav hráče, který má dokončené (boss mise) uvedené planety. */
 function stateWithCompleted(planetIds) {
@@ -555,4 +557,313 @@ test('titul i slavnost jsou čitelné a s vypnutým pohybem mají statickou náh
   );
   // Odznak je vidět i bez animace (zář má i základní pravidlo).
   assert.ok(resolveValue(rules, '.council-badge', 'filter'), 'odznak má lesk jen z animace');
+});
+
+/* --- Žebříček titulů (UCV-MAP-003) ---------------------------------------
+ *
+ * Odznak titulu na mapě otevírá celý žebříček. Testy hlídají hlavně to, aby
+ * se kreslil z dat (TITLES), ne z výčtu v obrazovce, aby zbývající počet
+ * planet seděl a aby budoucí stupně neprozradily obsah, který hráč nevidí.
+ */
+
+/** Očekávaný tvar slova po číslovce - schválně vlastní, ne import z modulu. */
+const tvarPlanet = (n) => (n === 1 ? 'planeta' : n >= 2 && n <= 4 ? 'planety' : 'planet');
+/** Tvar po předložce 'od' (2. pád): od 1 planety, od 2 planet. */
+const tvarOd = (n) => (n === 1 ? 'planety' : 'planet');
+
+/** Stav s prvními `pocet` planetami dohranými. */
+const stavSPoctem = (pocet) =>
+  pocet === 0 ? createDefaultState() : stateWithCompleted(PLANETS.slice(0, pocet).map((p) => p.id));
+
+function openLadder(state) {
+  const { root, screen } = renderMap(state);
+  const chip = root.querySelector('.map-player-title');
+  assert.ok(chip, 'panel hráče nemá odznak titulu');
+  chip.click();
+  return { root, screen, chip, overlay: root.querySelector('.title-ladder-overlay') };
+}
+
+test('TDD-MAP-003-N: odznak titulu otevře žebříček a ten se kreslí z TITLES', () => {
+  const { overlay } = openLadder(stavSPoctem(CORE_PLANETS.length));
+  assert.ok(overlay, 'klepnutí na odznak titulu žebříček neotevřelo');
+  assert.equal(overlay.getAttribute('role'), 'dialog');
+  assert.equal(overlay.getAttribute('aria-label'), 'Žebříček titulů');
+
+  const steps = overlay.querySelectorAll('.title-step');
+  assert.equal(steps.length, TITLES.length, 'žebříček nemá stupeň pro každý titul z TITLES');
+  TITLES.forEach((title, i) => {
+    assert.ok(steps[i].textContent.includes(title.label), `stupeň ${i + 1} není ${title.label}`);
+    if (title.minPlanets > 0) {
+      assert.ok(
+        steps[i].textContent.includes(`od ${title.minPlanets} ${tvarOd(title.minPlanets)}`),
+        `${title.label}: chybí práh 'od ${title.minPlanets} ${tvarOd(title.minPlanets)}'`
+      );
+    }
+  });
+  // Prahy mluví jednou formou - jinak stojí vedle sebe dvě holá čísla
+  // ('8 planet' a 'ještě 3 planety') a dítě neví, které je meta.
+  assert.ok(steps[0].textContent.includes('od začátku cesty'), 'první stupeň nemá slovní práh');
+
+  // Seznam bez odrážek si musí sémantiku říct sám (Safari + VoiceOver).
+  assert.equal(overlay.querySelector('.title-ladder-list').getAttribute('role'), 'list');
+});
+
+test('TDD-MAP-003-N2: nový stupeň v TITLES se v žebříčku objeví sám', () => {
+  // Ruční výčet v obrazovce by prošel testem výše (dnes sedí), ale tenhle
+  // ne: přidání titulu se nesmí muset psát na dvě místa.
+  TITLES.push({ id: 'zkusebni', label: 'Zkušební stupeň', minPlanets: 99 });
+  try {
+    const { overlay } = openLadder(createDefaultState());
+    const steps = overlay.querySelectorAll('.title-step');
+    assert.equal(steps.length, TITLES.length, 'žebříček nepřevzal nový stupeň z dat');
+    const last = steps[steps.length - 1];
+    assert.ok(last.textContent.includes('Zkušební stupeň'));
+    assert.ok(last.textContent.includes(`od 99 ${tvarOd(99)}`), 'nový stupeň nemá práh z dat');
+  } finally {
+    TITLES.pop();
+  }
+});
+
+test('TDD-MAP-003-O: žebříček vyznačí stupeň, na kterém hráč právě stojí', () => {
+  // Všechny počty planet, ne jen prahy: mezihodnoty (1, 3, 6, 7, 9, 10) jsou
+  // právě ty, kde se off-by-one v porovnání s prahem projeví.
+  for (const pocet of Array.from({ length: PLANETS.length + 1 }, (_, i) => i)) {
+    const state = stavSPoctem(pocet);
+    const { overlay } = openLadder(state);
+    const steps = overlay.querySelectorAll('.title-step');
+    const current = overlay.querySelectorAll('.title-step.is-current');
+    assert.equal(current.length, 1, `${pocet} planet: aktuální stupeň musí být právě jeden`);
+    assert.ok(
+      current[0].textContent.includes(titleFor(state).label),
+      `${pocet} planet: vyznačený stupeň není ${titleFor(state).label}`
+    );
+    assert.ok(current[0].textContent.includes('Tady jsi'), 'vyznačený stupeň to neříká slovy');
+    assert.equal(current[0].getAttribute('aria-current'), 'step');
+
+    // Pod aktuálním stupněm je splněno, nad ním zamčeno - a nic obojí.
+    const at = steps.indexOf(current[0]);
+    steps.forEach((step, i) => {
+      if (i < at) {
+        assert.ok(step.classList.contains('is-done'), `${pocet} planet: stupeň ${i} není splněný`);
+      }
+      if (i > at) {
+        assert.ok(step.classList.contains('is-locked'), `${pocet} planet: stupeň ${i} není zamčený`);
+      }
+      assert.equal(
+        step.classList.contains('is-locked') && step.classList.contains('is-done'),
+        false,
+        `${pocet} planet: stupeň ${i} je splněný i zamčený zároveň`
+      );
+    });
+  }
+});
+
+test('TDD-MAP-003-P: žebříček řekne, kolik planet do dalšího stupně zbývá', () => {
+  for (const pocet of [0, CORE_PLANETS.length, CORE_PLANETS.length + 2]) {
+    const state = stavSPoctem(pocet);
+    const { overlay } = openLadder(state);
+    const steps = overlay.querySelectorAll('.title-step');
+    const completed = completedPlanetCount(state);
+    assert.equal(completed, pocet, 'předpoklad testu neplatí - stav nemá tolik planet');
+
+    // Každý zamčený stupeň nese svůj vlastní zbytek, spočítaný z prahu.
+    TITLES.forEach((title, i) => {
+      if (title.minPlanets <= completed) {
+        return;
+      }
+      const zbyva = title.minPlanets - completed;
+      assert.ok(
+        steps[i].textContent.includes(`ještě ${zbyva} ${tvarPlanet(zbyva)}`),
+        `${pocet} planet, ${title.label}: chybí 'ještě ${zbyva} ${tvarPlanet(zbyva)}', je tam ${JSON.stringify(steps[i].textContent)}`
+      );
+    });
+
+    // A nejbližší stupeň je i v hlavičce dialogu, ať to dítě nemusí hledat.
+    const dalsi = TITLES.find((t) => t.minPlanets > completed);
+    const hlavicka = overlay.querySelector('.title-ladder-next').textContent;
+    const zbyva = dalsi.minPlanets - completed;
+    assert.ok(hlavicka.includes(dalsi.label), `${pocet} planet: hlavička neříká další titul`);
+    assert.ok(
+      hlavicka.includes(`ještě ${zbyva} ${tvarPlanet(zbyva)}`),
+      `${pocet} planet: hlavička hlásí ${JSON.stringify(hlavicka)}`
+    );
+    assert.ok(
+      overlay.querySelector('.title-ladder-summary').textContent.includes(String(completed)),
+      `${pocet} planet: shrnutí neříká, kolik planet má hráč hotových`
+    );
+  }
+
+  // Konkrétní tvary: 5 planet -> do Strážce Řádu chybí 3, 7 planet -> 1.
+  assert.ok(openLadder(stavSPoctem(5)).overlay.textContent.includes('ještě 3 planety'));
+  assert.ok(openLadder(stavSPoctem(7)).overlay.textContent.includes('ještě 1 planeta'));
+  assert.ok(openLadder(stavSPoctem(0)).overlay.textContent.includes('ještě 5 planet'));
+
+  // Dohraný hráč už nikam nespěje - žádné 'ještě' mu žebříček neslibuje.
+  const dohrano = openLadder(stateFinished()).overlay;
+  assert.equal(/ještě/.test(dohrano.textContent), false, 'dohraný hráč dostal další stupeň');
+  assert.equal(dohrano.querySelectorAll('.title-step.is-locked').length, 0);
+  assert.ok(dohrano.querySelector('.title-ladder-next').textContent.includes('vrcholu'));
+});
+
+test('TDD-MAP-003-Q: žebříček neprozradí obsah, který hráč ještě neviděl', () => {
+  const { overlay } = openLadder(createDefaultState());
+  const text = overlay.textContent;
+  for (const planet of PLANETS) {
+    assert.equal(text.includes(planet.name), false, `žebříček prozrazuje planetu ${planet.name}`);
+  }
+  // Oslavné hlášky u titulů mluví o Coruscantu a o endgame cestě - do
+  // žebříčku budoucích stupňů nepatří.
+  for (const title of TITLES) {
+    if (title.banner) {
+      assert.equal(text.includes(title.banner), false, `žebříček vyzradil hlášku titulu ${title.id}`);
+    }
+  }
+});
+
+test('TDD-MAP-003-R: žebříček má Zavřít v patičce, fokus uvnitř a vrací ho na odznak', () => {
+  const { root, chip, overlay } = openLadder(stavSPoctem(2));
+  const panel = overlay.querySelector('.solution-panel');
+  assert.ok(panel.classList.contains('solution-panel--framed'), 'panel by roloval i s tlačítkem');
+  const footer = overlay.querySelector('.overlay-footer');
+  assert.ok(footer, 'žebříček nemá patičku se zavíracím tlačítkem');
+  assert.equal(panel.childNodes[panel.childNodes.length - 1], footer, 'patička není poslední v panelu');
+  const closeBtn = footer.querySelectorAll('button')[0];
+  assert.ok(closeBtn.classList.contains('btn'), 'zavírací tlačítko nemá dotykový cíl třídy .btn');
+
+  // Fokus jde dovnitř dialogu (overlay se zavěsí do dokumentu dřív).
+  assert.ok(overlay.contains(document.activeElement), 'fokus zůstal mimo žebříček');
+
+  closeBtn.click();
+  assert.equal(root.querySelector('.title-ladder-overlay'), null, 'žebříček nejde zavřít');
+  assert.equal(document.activeElement, chip, 'fokus se po zavření nevrátil na odznak titulu');
+
+  // Dva overlaye naráz ne: dílna otevřená po žebříčku ho vystřídá.
+  chip.click();
+  root.querySelectorAll('button').find((b) => b.textContent.includes('Dílna')).click();
+  assert.equal(root.querySelector('.title-ladder-overlay'), null, 'žebříček zůstal viset pod dílnou');
+});
+
+test('TDD-MAP-003-S: odznak titulu je tlačítko s dotykovým cílem 56 px', () => {
+  const { root } = renderMap(createDefaultState());
+  const chip = root.querySelector('.map-player-title');
+  assert.equal(chip.tagName, 'BUTTON', 'odznak titulu nejde stisknout - není to tlačítko');
+  assert.equal(chip.textContent, 'Padawan', 'na odznaku má zůstat jen titul');
+  assert.equal(chip.getAttribute('aria-haspopup'), 'dialog');
+  const label = chip.getAttribute('aria-label');
+  assert.ok(label.includes('Padawan'), 'název tlačítka neobsahuje viditelný text');
+  assert.ok(/žebříček/i.test(label), 'název tlačítka neříká, co se stane');
+
+  // Dotykový cíl se počítá z kaskády, ne z výskytu v souboru; a var()
+  // se musí rozložit, jinak by podmínka prošla naprázdno.
+  const rules = parseCss(cssText);
+  const target = Number(/--touch-target:\s*(\d+)px/.exec(cssText)[1]);
+  assert.equal(target, 56, 'změnil se dotykový cíl aplikace');
+  const value = resolveValue(rules, 'button.map-player-title', 'min-height');
+  const px = /^(\d+)px$/.exec(value ?? '');
+  const resolved = px ? Number(px[1]) : value === 'var(--touch-target)' ? target : NaN;
+  assert.ok(resolved >= 56, `odznak titulu má dotykový cíl '${value}', což není aspoň 56 px`);
+
+  // Na tabletu není hover, takže bez viditelné pobídky vypadá odznak jako
+  // pouhý štítek - a hráč se o žebříčku zase nedozví. Šipka je v ::after,
+  // aby text tlačítka i jeho přístupný název zůstaly jen titulem.
+  const chevron = resolveValue(rules, 'button.map-player-title::after', 'content');
+  assert.ok(chevron && chevron !== 'none' && chevron !== "''", `odznak nemá vizuální pobídku: ${chevron}`);
+});
+
+test('žebříček je čitelný a zamčený stupeň se pozná rámečkem, ne ztlumením', () => {
+  const rules = parseCss(cssText);
+  const panel = cssColor('--color-bg-panel');
+  const solid = (value) => (value?.startsWith('var(') ? cssColor(value.slice(4, -1)) : value);
+
+  for (const selector of [
+    'p.title-ladder-summary',
+    'p.title-ladder-next',
+    '.title-step-name',
+    '.title-step-need',
+    '.title-step-state',
+    '.title-step.is-current .title-step-name',
+    '.title-step.is-done .title-step-state',
+    '.title-step.is-locked .title-step-state',
+  ]) {
+    const color = solid(resolveValue(rules, selector, 'color'));
+    assert.ok(color, `${selector}: nemá vlastní barvu textu`);
+    assert.ok(
+      contrast(color, panel) >= 4.5,
+      `${selector}: text ${color} má proti panelu jen ${contrast(color, panel).toFixed(2)}:1`
+    );
+    assert.equal(resolveValue(rules, selector, 'opacity'), null, `${selector}: text se ztlumuje průhledností`);
+  }
+
+  // Zamčený stupeň se odlišuje rámečkem a akcentem, ne ztlumením celého
+  // řádku - právě 'ještě 3 planety' dítě potřebuje přečíst.
+  assert.equal(resolveValue(rules, '.title-step.is-locked', 'opacity'), null, 'zamčený stupeň se ztlumuje');
+  assert.equal(resolveValue(rules, '.title-step.is-locked', 'border-style'), 'dashed');
+  const zamceny = resolveValue(rules, '.title-step.is-locked', 'border-color');
+  const aktualni = resolveValue(rules, '.title-step.is-current', 'border-color');
+  assert.ok(zamceny && aktualni && zamceny !== aktualni, 'zamčený a aktuální stupeň mají stejný rámeček');
+
+  // Odstavce hry mají max-width: 46ch, což by shrnutí lámalo doprostřed.
+  assert.equal(resolveValue(rules, 'p.title-ladder-summary', 'max-width'), 'none');
+  assert.equal(resolveValue(rules, 'p.title-ladder-next', 'max-width'), 'none');
+
+  // Řádek stupně jsou čtyři sousední <span> bez mezery v DOM ('Mistr
+  // Jedi5 planetTady jsi' - viz textContent v testech výše). Mezeru musí
+  // dát rozložení, jinak se v prohlížeči slijí do jednoho slova.
+  assert.equal(resolveValue(rules, '.title-step', 'display'), 'flex');
+  assert.ok(resolveValue(rules, '.title-step', 'gap'), 'řádek žebříčku nemá mezery mezi údaji');
+});
+
+test('TDD-MAP-003-T: model žebříčku je čistá funkce - stavy i zbytky sedí bez DOM', () => {
+  // titleLadderSteps a planetWord jsou exportované proto, aby pravidlo
+  // žebříčku šlo ověřit bez obrazovky. Očekávání jsou tu napsaná doslova,
+  // ne spočítaná toutéž funkcí (titleFor), kterou používá implementace.
+  assert.deepEqual(
+    [0, 1, 2, 4, 5, 11].map(planetWord),
+    ['planet', 'planeta', 'planety', 'planety', 'planet', 'planet']
+  );
+  assert.deepEqual([1, 2, 5, 11].map(planetWordFrom), ['planety', 'planet', 'planet', 'planet']);
+
+  assert.deepEqual(
+    titleLadderSteps(stavSPoctem(5)).map((s) => [s.label, s.isCurrent, s.isDone, s.remaining]),
+    [
+      ['Padawan', false, true, 0],
+      ['Zkušený padawan', false, true, 0],
+      ['Rytíř Jedi', false, true, 0],
+      ['Mistr Jedi', true, false, 0],
+      ['Strážce Řádu', false, false, 3],
+      ['Člen rady Jedi', false, false, 6],
+    ]
+  );
+  // Nový hráč: aktuální je první stupeň, nic není splněné.
+  const novy = titleLadderSteps(createDefaultState());
+  assert.deepEqual(novy.map((s) => s.isCurrent), [true, false, false, false, false, false]);
+  assert.deepEqual(novy.map((s) => s.remaining), [0, 2, 4, 5, 8, 11]);
+});
+
+test('DOM stub hlásí nepodporovaný selektor výjimkou, ne tichým prázdnem', () => {
+  const container = createContainer();
+  const outer = document.createElement('div');
+  outer.className = 'outer';
+  const inner = document.createElement('span');
+  inner.className = 'inner';
+  outer.appendChild(inner);
+  container.appendChild(outer);
+
+  // Co stub umí, ať najde - i složeninu typu a tříd.
+  assert.equal(container.querySelectorAll('.outer').length, 1);
+  assert.equal(container.querySelectorAll('span.inner').length, 1);
+  assert.equal(container.querySelectorAll('.outer.chybi').length, 0);
+  assert.equal(container.querySelectorAll('span, div').length, 2);
+
+  // Co neumí, ať křičí. Potomkový selektor ('.a .b') je nejběžnější tvar,
+  // u kterého se tichá nula splete s 'prvek tam není' - a nad takovým
+  // dotazem by svítil zelený test, protože forEach nad prázdným polem nic
+  // neasertuje. Stráž musí platit pro KAŽDÝ tvar, který stub neumí.
+  for (const selector of ['.outer .inner', 'span em', '*', '.outer > .inner', '#app', '.a[hidden]']) {
+    assert.throws(
+      () => container.querySelectorAll(selector),
+      /nepodporovaný selektor/,
+      `stub tiše spolkl selektor ${selector}`
+    );
+  }
 });

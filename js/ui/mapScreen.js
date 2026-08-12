@@ -23,6 +23,7 @@ import {
 import { createPlanetArt, createStarfield } from './planetArt.js';
 import { createInventoryOverlay, createWorkshopOverlay } from './workshopScreen.js';
 import { createCouncilCelebration, createConfetti } from './councilScreen.js';
+import { createTitleLadderOverlay } from './titleLadder.js';
 import { createParentGate } from './parentGate.js';
 
 /** Šířka karty planety + mezera (css .planet-card min-width + .planet-strip gap). */
@@ -63,9 +64,18 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
   // Titul vedle jména (UCV-MAP-003): Padawan -> ... -> Člen rady Jedi.
   // Roste s dokončenými planetami, takže na mapě je pořád vidět, jak
   // daleko hráč došel - ne až v odměnách.
-  const rank = document.createElement('span');
+  //
+  // Odznak je zároveň vstup do celého žebříčku titulů: je to jediné místo,
+  // kde ho dítě hledá samo (vidí ho tu po každé misi). Rodičovský přehled
+  // je za rodičovskou bránou, tam se dítě nedostane. Text odznaku zůstává
+  // jen titul, akce je v aria-label - viz js/ui/titleLadder.js.
+  const currentTitle = titleFor(state);
+  const rank = document.createElement('button');
+  rank.type = 'button';
   rank.className = 'map-player-title';
-  rank.textContent = titleFor(state).label;
+  rank.textContent = currentTitle.label;
+  rank.setAttribute('aria-haspopup', 'dialog');
+  rank.setAttribute('aria-label', `${currentTitle.label} - zobrazit žebříček titulů`);
   const crystalsBtn = document.createElement('button');
   crystalsBtn.type = 'button';
   crystalsBtn.className = 'btn btn-ghost btn-crystals';
@@ -101,6 +111,16 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
       },
     });
   });
+  rank.addEventListener('click', () => {
+    closeOverlay();
+    overlay = createTitleLadderOverlay(root, {
+      state,
+      onClose: () => {
+        overlay = null;
+        rank.focus();
+      },
+    });
+  });
   workshopBtn.addEventListener('click', () => {
     closeOverlay();
     overlay = createWorkshopOverlay(root, {
@@ -124,7 +144,7 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
   // Mistr Jedi se dál počítá jen z původní pětky (UCV-MAP-002): endgame řetěz
   // visí za ní, takže hráč, který kdysi dobyl Coruscant, o titul nepřijde.
   const councilMember = isJediCouncil(state);
-  const rankBanner = councilMember || isMasterJedi(state, CORE_PLANETS) ? titleFor(state).banner : null;
+  const rankBanner = councilMember || isMasterJedi(state, CORE_PLANETS) ? currentTitle.banner : null;
   if (rankBanner) {
     const master = document.createElement('div');
     master.className = 'master-jedi' + (councilMember ? ' master-jedi--council' : '');

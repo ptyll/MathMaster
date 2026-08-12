@@ -244,9 +244,6 @@ function matchesSingle(el, selector) {
     const base = selector.slice(0, -':not(:disabled)'.length);
     return !el.disabled && matchesSingle(el, base);
   }
-  if (selector.startsWith('.')) {
-    return el.classList.contains(selector.slice(1));
-  }
   if (selector.startsWith('[')) {
     const match = /^\[([\w-]+)(?:="([^"]*)")?\]$/.exec(selector);
     if (!match) {
@@ -255,7 +252,25 @@ function matchesSingle(el, selector) {
     const value = el.getAttribute(match[1]);
     return match[2] === undefined ? value !== null : value === match[2];
   }
-  return el.tagName === selector.toUpperCase();
+  // Zbývá `tag`, `.trida` a jejich složeniny (`.title-step.is-current`,
+  // `button.map-player-title`) - tedy typ, když je vypsaný, a VŠECHNY
+  // uvedené třídy naráz. Dokud stub bral '.a.b' jako jedinou třídu 'a.b',
+  // nenašel nic a vrátil prázdno místo chyby: test nad složeným selektorem
+  // by tiše kryl obrazovku, která tu třídu vůbec nenastavuje.
+  //
+  // Do stráže patří i MEZERA (potomek) a `*`: '.a .b'.split('.') dá třídy
+  // ['a ', 'b'] a contains('a ') je vždycky false, takže nejběžnější tvar
+  // složeného selektoru by tiše vracel nulu - a nula vypadá jako 'prvek
+  // tam není', ne jako 'stub to neumí'. Kdo si přečte tenhle komentář,
+  // musí se na výjimku spolehnout u KAŽDÉHO tvaru, který stub neumí.
+  if (/[[\]:#>~+*\s]/.test(selector)) {
+    throw new Error(`DOM stub: nepodporovaný selektor ${selector}`);
+  }
+  const [tag, ...classes] = selector.split('.');
+  if (tag && el.tagName !== tag.toUpperCase()) {
+    return false;
+  }
+  return classes.every((name) => el.classList.contains(name));
 }
 
 /**

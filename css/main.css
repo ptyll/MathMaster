@@ -743,6 +743,134 @@ p {
   white-space: nowrap;
 }
 
+/* Odznak titulu na mapě je zároveň tlačítko, které otevře celý žebříček
+   (UCV-MAP-003). Vzhled zůstává stejný jako u odznaku v přehledu, přibývá
+   jen dotykový cíl 56 px jako u ostatních tlačítek - na tabletu do něj
+   dítě míří prstem. Tlačítko nedědí písmo, proto font-family: inherit. */
+button.map-player-title {
+  min-height: var(--touch-target);
+  min-width: var(--touch-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* Bez šipky vypadá odznak jako pouhý štítek a na tabletu není hover, takže
+   dítě nemá jak poznat, že vede dál - a právě 'nikde se nedozví, že
+   žebříček existuje' byl důvod téhle funkce. Šipka je čistě vizuální
+   pobídka: text tlačítka i jeho přístupný název (aria-label) drží beze
+   změny, protože aria-label má před obsahem přednost. */
+button.map-player-title::after {
+  content: '▸';
+  margin-left: 0.4rem;
+  font-size: 0.9em;
+}
+
+button.map-player-title:hover,
+button.map-player-title:focus-visible {
+  border-color: #ffd94d;
+  background: rgba(255, 217, 77, 0.12);
+}
+
+button.map-player-title:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+/* --- Žebříček titulů (overlay nad mapou, UCV-MAP-003) --- */
+
+.title-ladder {
+  align-self: stretch;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Odstavce mají v této hře max-width: 46ch, což by tenhle jednořádkový
+   souhrn zbytečně lámalo doprostřed dialogu. */
+p.title-ladder-summary {
+  max-width: none;
+  color: var(--color-text);
+}
+
+p.title-ladder-next {
+  max-width: none;
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.title-ladder-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.title-step {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid rgba(154, 163, 199, 0.5);
+  border-radius: var(--radius);
+}
+
+.title-step-name {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.title-step-need {
+  font-size: 0.95rem;
+  color: var(--color-text-dim);
+}
+
+.title-step-state {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--color-text-dim);
+}
+
+.title-step.is-done {
+  border-color: #7ee08c;
+}
+
+.title-step.is-done .title-step-state {
+  color: #7ee08c;
+}
+
+/* Stupeň, na kterém hráč stojí: silnější zlatý rámeček a zlatý text -
+   pozná se i bez čtení stavu. */
+.title-step.is-current {
+  border-width: 3px;
+  border-color: #ffd94d;
+  background: rgba(255, 217, 77, 0.12);
+}
+
+.title-step.is-current .title-step-name,
+.title-step.is-current .title-step-state {
+  color: #ffd94d;
+}
+
+/* Zamčený stupeň: přerušovaný rámeček a modrý akcent, NE ztlumený text.
+   Právě 'ještě 3 planety' je věta, kvůli které dítě žebříček otevřelo. */
+.title-step.is-locked {
+  border-style: dashed;
+  border-color: var(--color-accent);
+}
+
+.title-step.is-locked .title-step-state {
+  color: var(--color-accent);
+}
+
 .map-crystals {
   font-size: 1.15rem;
   font-weight: 700;

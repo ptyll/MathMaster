@@ -418,6 +418,13 @@ test('TDD-MAP-003-L: přehled pro rodiče ukazuje jméno hráče, titul a postup
     false,
     'přehled si počet planet dopočítává z PLANETS.length - po přidání planety se rozejde s titulem Rady'
   );
+  // Nestačí jmenovatel: čitatel musí počítat nad TOUŽ množinou, jinak dá
+  // dvanáctá planeta nesmyslné '12 z 11 planet dokončeno'.
+  assert.match(
+    statsSource,
+    /completedPlanetCount\(state,\s*COUNCIL_PLANETS\)/,
+    'čitatel počítá přes všechny planety, jmenovatel jen přes cestu Rady'
+  );
 
   // Titul patří i k novému hráči, kde se vyhodnocení ještě nezapnulo -
   // rodič otevře přehled dřív, než dítě nasbírá dost příkladů.

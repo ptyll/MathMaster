@@ -10,6 +10,7 @@
 
 import { summarizeStats, formatPercent, formatDuration, MIN_EXERCISES_FOR_REPORT } from '../engine/stats.js';
 import { titleFor, completedPlanetCount, COUNCIL_PLANET_COUNT } from '../engine/titles.js';
+import { COUNCIL_PLANETS } from '../content/planets.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -51,10 +52,10 @@ export function createStatsScreen(container, { state, onBack }) {
   rank.textContent = titleFor(state).label;
   const progress = document.createElement('span');
   progress.className = 'stats-profile-progress';
-  // Počet bereme z téhož zdroje jako titul Rady (COUNCIL_PLANET_COUNT), ne
-  // z PLANETS.length: dnes je to totéž, ale dvanáctá planeta by přehledu dala
-  // '5 z 12', zatímco Rada by se pořád počítala z 11.
-  progress.textContent = `${completedPlanetCount(state)} z ${COUNCIL_PLANET_COUNT} planet dokončeno`;
+  // Čitatel i jmenovatel musí počítat nad TOUŽ množinou planet, ze které se
+  // počítá titul Rady. Samotné COUNCIL_PLANET_COUNT ve jmenovateli nestačí:
+  // dvanáctá planeta by dala nesmyslné '12 z 11 planet dokončeno'.
+  progress.textContent = `${completedPlanetCount(state, COUNCIL_PLANETS)} z ${COUNCIL_PLANET_COUNT} planet dokončeno`;
   profile.append(playerName, rank, progress);
 
   const backBtn = document.createElement('button');

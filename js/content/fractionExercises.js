@@ -346,7 +346,17 @@ export function generateFractionExercise(seed, kind, difficulty = 1) {
       // volně, takže tak těsná je jen zřídka.
       [a, b] = prng.pick(CLOSE_PAIRS[difficulty]).map((f) => ({ ...f }));
     } else if (compareFractions(a, b) === 0) {
-      b = makeFraction(b.n + 1, b.d);
+      // Shodné zlomky se musí rozejít. Zvětšení čitatele to umí, ale u tvaru
+      // n/(n+1) z něj vyjde CELEK (1/2 -> 2/2 = 1) a otázka "Který zlomek je
+      // větší: 1/2 nebo 1?" pak nemluví o dvou zlomcích. Horší než ta věta je
+      // úloha sama: na stupních 1-3 je každý losovaný zlomek menší než celek
+      // (randomFraction bere čitatel 1..d-1), takže odpověď je VŽDYCKY ten
+      // celek a dítě ji trefí bez počítání.
+      // V tom jediném případě proto zmenšujeme jmenovatelem - b zůstane pravým
+      // zlomkem a je jistě menší než a. Ostatní shody řešíme jako dřív, aby se
+      // nezúžil tvar úlohy jen na 'n/d proti n/(d+1)'; ani jedna větev nesahá
+      // na PRNG, takže se přerovná POUZE tenhle případ a nic jiného.
+      b = b.n + 1 === b.d ? makeFraction(b.n, b.d + 1) : makeFraction(b.n + 1, b.d);
     }
     const common = lcm(a.d, b.d);
     const answer = compareFractions(a, b) > 0 ? 'left' : 'right';

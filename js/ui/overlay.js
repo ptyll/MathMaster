@@ -35,6 +35,13 @@ export function createOverlay(titleText, onClose, { closeLabel = 'Zavřít' } = 
 
   const content = document.createElement('div');
   content.className = 'overlay-content';
+  // Rolovatelná oblast musí být fokusovatelná, jinak se na nízkém okně
+  // (1024x500) ke spodku obsahu nedá dostat klávesnicí: uvnitř není nic
+  // fokusovatelného a nadpis i 'Zavřít' jsou jeho SOUROZENCI, takže se fokus
+  // do rolovatelného prvku nemá jak dostat. Týká se celého sdíleného rámce -
+  // dílna, inventář i žebříček titulů. Týž precedens má mapScreen.js u pásu
+  // planet (strip.tabIndex = 0).
+  content.tabIndex = 0;
 
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';

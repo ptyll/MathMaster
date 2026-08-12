@@ -1292,6 +1292,18 @@ p.title-ladder-next {
   width: 100%;
 }
 
+/*
+ * Obsah dialogu je od UCV-FIX-001 tab stop (tabindex=0), aby se rolující
+ * text dal doscrollovat i z klávesnice. Tab stop, na kterém dítě nevidí,
+ * kde je, je půlka opravy - rámeček tedy podle konvence projektu (.btn,
+ * .tile-box, .planet-card). Odsazení 2px se vejde do paddingu panelu
+ * (1.5rem), takže ho `overflow: hidden` na --framed neuřízne.
+ */
+.overlay-content:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
 .inventory-empty {
   color: var(--color-text-dim);
   text-align: center;

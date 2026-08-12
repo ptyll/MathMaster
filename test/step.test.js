@@ -1237,3 +1237,52 @@ test('UCN-STEP-001: správná volání se kontrolou nezměnila', () => {
   assert.equal(checkStep(plain, next).status, 'ok');
   assert.deepEqual(askedParts(plain, next), ['right.c']);
 });
+
+/* --- UCV-FIX-001: nepřečtená strana se nesmí vykreslit jako '0' --- */
+
+test('UCV-FIX-001: váha nepřečtenou stranu NEVYKRESLÍ jako nulu', async () => {
+  // Falešná nula je nepravda, kterou vidí dítě: strana, kterou parseSide
+  // nepřečte, se kreslila jako literál '0', tedy "na misce nic není". A byla
+  // to nepravda přesně naopak - SKUTEČNÁ nula přijde jako constantText '0' a
+  // do té větve se nikdy nedostala. Tvary, které parser neumí, jsou ty se
+  // záporným zlomkovým koeficientem (známá díra, viz round-trip v solver.test.js).
+  const { installDom } = await import('./domStub.js');
+  installDom();
+  const { createBalanceScale } = await import('../js/ui/balanceScale.js');
+
+  const zeroTexts = (leftText, rightText) => {
+    const scale = createBalanceScale();
+    scale.show(leftText, rightText);
+    return scale.element
+      .querySelectorAll('text')
+      .map((t) => t.textContent)
+      .filter((t) => t === '0');
+  };
+
+  // Tyhle čtyři tvary parser NEPŘEČTE - a právě u nich se dřív psala nula.
+  for (const text of ['(x + 3)/4', '1/4(x + 3)', '5 - (2/3)x', '5 - x/3']) {
+    assert.deepEqual(
+      zeroTexts(text, '12'),
+      [],
+      `váha tvrdí '0' u strany '${text}', kterou jen nepřečetla`
+    );
+  }
+
+  // Kontrola opačným směrem: strany, které parser čte, se kreslit nepřestaly.
+  // Počítá se uvnitř MISKY, ne v celém svg: statická kostra váhy (nosník,
+  // sloup, podstavec) má 3 `rect` i bez jediného volání show(), takže nad
+  // celým svg mělo tvrzení podlahu 3 a nemohlo spadnout ani při úplně
+  // prázdné misce. V misce je podlaha 0 (miska sama je `path`), takže se
+  // měří opravdu to, co dítě na misce uvidí: 4/4/2/1/7 kostek a pytlíků.
+  for (const text of ['12 - x', '10 - 3x', '2(x + 10)', 'x', '7']) {
+    const scale = createBalanceScale();
+    scale.show(text, '12');
+    // Selektor '.balance-pan rect' stub úmyslně neumí a hlásí to výjimkou;
+    // rozšiřovat kvůli jednomu testu měřicí přístroj by bylo horší než
+    // najít misku a počítat v ní. První miska je levá - tam jde `text`.
+    const leftPan = scale.element.querySelectorAll('.balance-pan')[0];
+    assert.ok(leftPan, 'váha nemá misku .balance-pan, test měří jinde než na misce');
+    const drawn = leftPan.querySelectorAll('rect').length;
+    assert.ok(drawn > 0, `váha přestala kreslit čitelnou stranu '${text}'`);
+  }
+});

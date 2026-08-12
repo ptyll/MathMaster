@@ -500,7 +500,10 @@ test('TDD-MAP-003-K: přechod na obrazovku nepřebije fokus otevřeného modálu
   focusNewScreen(plain);
   const h1 = plain.querySelector('h1');
   assert.equal(document.activeElement, h1, 'po přechodu na obrazovku fokus nikam nemíří');
-  assert.equal(h1.tabIndex, -1, 'nadpis není fokusovatelný');
+  // Proti ATRIBUTU, ne proti vlastnosti: -1 je i výchozí hodnota prvku, na
+  // který nikdo nesáhl, takže tvrzení o vlastnosti by platilo i o nenastaveném
+  // nadpisu a nepoznalo by, že mu to nastavení někdo smazal.
+  assert.equal(h1.getAttribute('tabindex'), '-1', 'nadpis není programově fokusovatelný');
 });
 
 test('titul i slavnost jsou čitelné a s vypnutým pohybem mají statickou náhradu', () => {

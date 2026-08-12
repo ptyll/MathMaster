@@ -25,11 +25,26 @@ class StubElement {
     this.style = {};
     this.hidden = false;
     this.disabled = false;
-    this.tabIndex = 0;
+    // Prohlížeč dává běžnému prvku tabIndex -1 (není tab stop), dokud mu ho
+    // někdo nenastaví. Stub tu měl 0, což znamenalo, že KAŽDÝ prvek vypadal
+    // fokusovatelně - a test na fokusovatelnost tím nemohl nikdy spadnout.
+    // Zároveň se nastavení PROMÍTÁ do atributu, stejně jako v prohlížeči:
+    // bez toho by selektor '[tabindex="-1"]' (dialogA11y) buď nenašel nic, nebo
+    // naopak všechno.
+    this._tabIndex = -1;
     this.type = '';
     this._text = '';
     this._classes = new Set();
     this._listeners = new Map();
+  }
+
+  get tabIndex() {
+    return this._tabIndex;
+  }
+
+  set tabIndex(value) {
+    this._tabIndex = Number(value);
+    this.attributes.set('tabindex', String(value));
   }
 
   get className() {
@@ -180,9 +195,9 @@ class StubElement {
   }
 
   getAttribute(name) {
-    if (name === 'tabindex' && !this.attributes.has('tabindex')) {
-      return String(this.tabIndex);
-    }
+    // Nenastavený tabindex ŽÁDNÝ atribut nemá - dřív se tu dopisovala výchozí
+    // hodnota, takže selektor '[tabindex="-1"]' by sedl na každý prvek.
+    // Nastavení jde do atributu přes setter výš, takže reflexe drží.
     return this.attributes.get(name) ?? null;
   }
 

@@ -37,10 +37,16 @@ function cube(x, y) {
 /** Obsah misky: pytlíky + kostky podle parsované strany. */
 function panContents(panX, baseY, side) {
   const g = svgEl('g');
+  // Strana, kterou parser NEPŘEČETL (xTerm i constantText jsou null), NENÍ
+  // prázdná strana - jen o ní nic nevíme. Napsat do misky '0' znamenalo tvrdit
+  // dítěti, že tam nic není, což je nepravda o rovnici, kterou má před sebou.
+  // A byla to nepravda přesně naopak: SKUTEČNÁ nula přijde jako constantText
+  // '0' (tedy pravdivá hodnota), ta se sem nikdy nedostala a kreslila se jako
+  // prázdná miska - kdežto '0' se vypisovala jen tam, kde se nevědělo nic.
+  // Tvary, které parser neumí: '(x + 3)/4', '1/4(x + 3)', '5 - (2/3)x',
+  // '5 - x/3' (záporný zlomkový koeficient). Radši nic než nepravda - stejně
+  // to řeší stepInput.js u nesečtené strany, kde váhu rovnou skryje.
   if (!side.xTerm && !side.constantText) {
-    const t = svgEl('text', { x: panX + 45, y: baseY - 12, 'text-anchor': 'middle', fill: '#9aa3c7', 'font-size': 16 });
-    t.textContent = '0';
-    g.appendChild(t);
     return g;
   }
   const hasConstant = !!side.constantText && side.constantText !== '0';

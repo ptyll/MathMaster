@@ -137,16 +137,21 @@ test('pokyn kroku, tlačítko i zadání píšou týž x-člen stejně', () => {
 
 test('co formatPlain napíše, to parseSide pro váhu přečte (round-trip)', () => {
   // Váha stojí na nepsaném kontraktu mezi solverem (píše) a visualParse
-  // (čte zpátky). Bez tohohle testu se můžou rozejít potichu: strana, kterou
-  // parseSide nepřečte, se na váze vykreslí jako literál '0', tedy tvrzení,
-  // že na misce nic není.
+  // (čte zpátky). Bez tohohle testu se můžou rozejít potichu.
   //
-  // ZNÁMÁ DÍRA (carry-forward, nikoli regrese): stranu se ZÁPORNÝM ZLOMKOVÝM
-  // koeficientem parseSide nepřečte - ř. 44 i ř. 54 chtějí '(\d*)x'. Konkrétně
-  // '4 - x/3', '4 - (2/3)x', '-(3/2)x' i '-(3/2)x - 4'. Jediná výjimka, která
-  // projde, je záporný JEDNOTKOVÝ zlomek bez kladné konstanty ('-x/3'), na ten
-  // gramatika pamatuje. Žádný generátor takový tvar nevyrábí a zlomkové stupně
-  // 4-6 se mu vyhýbají, proto se to opravuje mimo tuhle fázi.
+  // ZNÁMÁ DÍRA V PARSERU (carry-forward, nikoli regrese): stranu se ZÁPORNÝM
+  // ZLOMKOVÝM koeficientem parseSide nepřečte - ř. 44 i ř. 54 chtějí '(\d*)x'.
+  // Konkrétně '4 - x/3', '4 - (2/3)x', '-(3/2)x' i '-(3/2)x - 4'. Jediná
+  // výjimka, která projde, je záporný JEDNOTKOVÝ zlomek bez kladné konstanty
+  // ('-x/3'), na ten gramatika pamatuje. Žádný generátor takový tvar nevyrábí
+  // a zlomkové stupně 4-6 se mu vyhýbají. Tenhle test tu díru drží vyjmenovanou
+  // a hlídá, že se nerozšíří.
+  //
+  // CO SE ZMĚNILO (UCV-FIX-001): DŮSLEDEK té díry už není falešná nula.
+  // Nepřečtená strana se dřív na váze vykreslila jako literál '0', tedy jako
+  // tvrzení, že na misce nic není; balanceScale.js dnes v takovém případě
+  // nekreslí NIC. Díra v parseru zůstává (gramatika se nezměnila), ale hra
+  // o ní dítěti nelže. Test na to je v test/step.test.js.
   const isKnownHole = (coefficient, constant) =>
     coefficient.n < 0 && coefficient.d > 1 && (constant > 0 || coefficient.n !== -1);
 

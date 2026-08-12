@@ -102,7 +102,9 @@ test('TDD-REWARD-003-I: hráč s lodí postaví droida klikáním a tím si odem
   // musel prokousat celou dílnou znovu. Nadpis skupiny navíc přečte postup.
   const droidTitle = container.querySelector('.part-group-droid').querySelector('.part-group-title');
   assert.equal(document.activeElement, droidTitle, 'po stavbě se ztratil fokus');
-  assert.equal(droidTitle.tabIndex, -1, 'nadpis se nesmí stát tab stopem navíc');
+  // Proti ATRIBUTU, ne proti vlastnosti - -1 je i výchozí hodnota nenastaveného
+  // prvku, takže tvrzení o vlastnosti by nepoznalo, že nastavení zmizelo.
+  assert.equal(droidTitle.getAttribute('tabindex'), '-1', 'nadpis se nesmí stát tab stopem navíc');
 
   assert.equal(crafted, 3, 'stavba se neohlásila k uložení');
   assert.equal(crystalCount(state, 'oranžový'), 0, 'krystaly se nespotřebovaly');
@@ -471,4 +473,26 @@ test('tlačítko Postavit drží dotykový cíl 56 px', () => {
     resolved >= 56,
     `tlačítko v dílně má dotykový cíl '${value}', což není aspoň 56 px`
   );
+});
+
+test('UCV-FIX-001: rolovatelný obsah dialogu jde zaostřit klávesnicí', async () => {
+  // `.overlay-content` roluje (viz test výš), ale uvnitř není nic
+  // fokusovatelného a nadpis ani 'Zavřít' v něm nejsou - jsou to jeho
+  // SOUROZENCI. Bez tabIndex se tedy na nízkém okně (1024x500) ke spodku
+  // obsahu klávesnicí nedostane nikdo. Týká se celého sdíleného rámce, proto
+  // se to měří na createOverlay, ne na jedné obrazovce.
+  const { createOverlay } = await import('../js/ui/overlay.js');
+  const { overlay, content } = createOverlay('Dílna', () => {});
+  assert.equal(content.tabIndex, 0, 'rolovatelný obsah dialogu není fokusovatelný');
+  // Fokusovatelný má být rolující OBSAH, ne celý rám - ten drží fokus 'Zavřít'.
+  assert.notEqual(overlay.tabIndex, 0, 'tab stopem se stal celý rám dialogu');
+
+  // A totéž musí platit pro každou obrazovku, která ten rám používá.
+  for (const build of [createWorkshopOverlay, createInventoryOverlay]) {
+    const host = createContainer();
+    build(host, { state: stateWith(), onCrafted: () => {}, onClose: () => {} });
+    const scrollable = host.querySelector('.overlay-content');
+    assert.ok(scrollable, 'dialog nemá rolovatelný obsah');
+    assert.equal(scrollable.tabIndex, 0, 'obsah dialogu obrazovky není fokusovatelný');
+  }
 });

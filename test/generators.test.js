@@ -534,3 +534,32 @@ test('UCN-MATH-003: poměrový pás kreslí nepravý zlomek dál po celcích', a
   assert.equal(barRows(createFractionBar, 23, 24)[0].length, 24, 'jmenovatel 24 se má dělit na přihrádky');
   assert.equal(barRows(createFractionBar, 24, 25)[0].length, 2, 'jmenovatel 25 už má být poměrový');
 });
+
+test('UCV-FIX-001: compare se na stupních 1-3 neptá "který zlomek" na celé číslo', () => {
+  // Otázka "Který zlomek je větší: 1/2 nebo 1?" nemluví o dvou zlomcích - a
+  // hlavně je to úloha bez práce: na stupních 1-3 je každý losovaný zlomek
+  // menší než celek, takže odpověď je VŽDYCKY ten celek a dítě ji trefí bez
+  // počítání. Vzniklo to rozcházením shodných zlomků přes čitatele
+  // (1/2 -> 2/2 = 1). Měří se VÝSKYT přes stovky seedů, ne jeden příklad:
+  // naměřeno 3,2 % na d1, d2 i d3 (na d4-6 to nikdy nebylo).
+  const isWhole = (option) => !option.includes('/');
+  for (const difficulty of [1, 2, 3, 4, 5, 6]) {
+    let withWhole = 0;
+    for (let seed = 1; seed <= 2000; seed++) {
+      const ex = generateFractionExercise(seed, 'compare', difficulty);
+      if (ex.answer.options.some(isWhole)) {
+        withWhole++;
+      }
+    }
+    assert.equal(withWhole, 0, `compare d${difficulty}: ${withWhole} zadání porovnává s celým číslem`);
+  }
+  // Dvojice se pořád musí ROZEJÍT - jinak by "oprava" jen vyrobila otázku,
+  // kde jsou obě možnosti stejné a správná odpověď neexistuje.
+  for (const difficulty of [1, 2, 3]) {
+    for (let seed = 1; seed <= 2000; seed++) {
+      const ex = generateFractionExercise(seed, 'compare', difficulty);
+      const [left, right] = ex.answer.options;
+      assert.notEqual(left, right, `compare d${difficulty} seed ${seed}: obě možnosti jsou '${left}'`);
+    }
+  }
+});

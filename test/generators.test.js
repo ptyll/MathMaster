@@ -414,6 +414,13 @@ test('do zlomkového pásu nesmí přijít jmenovatel, který ho rozbije', () =>
   // z pravé strany kroků, takže mez platí na ně.
   const LIMIT = 72; // strop, který hra kreslila už na stupních 1-3
   for (const kind of ['add', 'subtract', 'simplify', 'expand', 'equivalent', 'compare']) {
+    // POZOR NA ROZSAH: 300 seedů tu stačí JEN dokud test jede pouze stupně 4-6.
+    // Tam maxima (add/sub 36 a 30, expand 72, equivalent 72, compare 72) padnou
+    // hluboko do 300 seedů. Kdo rozsah rozšíří na stupně 1-3, MUSÍ zvednout i
+    // počet seedů: equivalent tam dosáhne 72 až nad 300 seedy (do 300 jen 66) a
+    // compare 132 (do 300 jen 99). Jinak vznikne přesně ten vakuový test, jaký
+    // tahle fáze jednou už našla - zelený o jediný krok pod hranicí, kterou má
+    // hlídat. Test níž jede proto 600 seedů a záběr si navíc kontroluje sám.
     for (const difficulty of [4, 5, 6]) {
       for (let seed = 1; seed <= 300; seed++) {
         const exercise = generateFractionExercise(seed, kind, difficulty);

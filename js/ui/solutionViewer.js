@@ -76,7 +76,16 @@ export function createSolutionViewer(container, { exercise, onClose, startStep =
 
     if (mode === 'balance') {
       vizHost.appendChild(scale.element);
-      scale.show(step.leftSide, step.rightSide);
+      if (!scale.show(step.leftSide, step.rightSide)) {
+        // Váha stranu nepřečetla a schovala se (balanceScale.js). Bez ní by
+        // v kroku nezbylo nic než pokyn 'Odečti 3 z obou stran' - a dítě by
+        // nemělo kde vidět, z ČEHO se to odečítá. Rovnici proto dopíšeme
+        // textem, stejně jako to dělá osa i zlomkové pásy pod sebou.
+        const eq = document.createElement('p');
+        eq.className = 'solution-equation';
+        eq.textContent = `${step.leftSide} = ${step.rightSide}`;
+        vizHost.appendChild(eq);
+      }
     } else if (mode === 'numberline') {
       const value = extractFractions(step.rightSide)[0];
       const num = value ? value.n / value.d : 0;

@@ -601,6 +601,34 @@ p {
   height: auto;
 }
 
+/*
+ * Věta, která u nepřečteného tvaru rovnice stojí místo váhy. Je to text, který
+ * má dítě PŘEČÍST, ne dekorace - proto plná barva písma a rámeček, ne ztlumení
+ * (ztlumený text tady v dílně jednou spadl pod čitelný kontrast).
+ */
+.balance-note {
+  margin: 0;
+  /*
+   * Rozměr drží podle váhy, kterou nahrazuje - a to v OBOU směrech. Šířka je
+   * tatáž jako u .balance-svg, výška vychází z jejího viewBoxu 320x190
+   * (190/320 = 0,59), takže min(190px, 47.5vw) sedí i na úzkém tabletu.
+   * Bez té výšky se sloupec při přechodu na nenakreslitelný krok srazí
+   * o ~100 px a tlačítka Zpět/Další krok vyskočí dítěti pod prst.
+   */
+  width: min(320px, 80vw);
+  min-height: min(190px, 47.5vw);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1rem;
+  border: 2px dashed var(--color-accent);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .balance-beam {
   transform-origin: 160px 62px;
 }

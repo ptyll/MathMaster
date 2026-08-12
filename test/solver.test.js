@@ -147,11 +147,14 @@ test('co formatPlain napíše, to parseSide pro váhu přečte (round-trip)', ()
   // a zlomkové stupně 4-6 se mu vyhýbají. Tenhle test tu díru drží vyjmenovanou
   // a hlídá, že se nerozšíří.
   //
-  // CO SE ZMĚNILO (UCV-FIX-001): DŮSLEDEK té díry už není falešná nula.
-  // Nepřečtená strana se dřív na váze vykreslila jako literál '0', tedy jako
-  // tvrzení, že na misce nic není; balanceScale.js dnes v takovém případě
-  // nekreslí NIC. Díra v parseru zůstává (gramatika se nezměnila), ale hra
-  // o ní dítěti nelže. Test na to je v test/step.test.js.
+  // CO SE ZMĚNILO (UCV-FIX-001, pak UCV-LEARN-001): DŮSLEDEK té díry se
+  // zmenšil dvakrát. Nejdřív zmizela falešná nula - nepřečtená strana se
+  // kreslila jako literál '0', tedy jako tvrzení, že na misce nic není. Pak
+  // zmizela i prázdná miska, která tvrdila totéž beze slov a byla přitom
+  // k nerozeznání od SKUTEČNÉ nuly: balanceScale.js dnes u nepřečtené strany
+  // váhu vůbec neukáže a napíše dítěti proč. Díra v parseru zůstává
+  // (gramatika se nezměnila), ale hra o ní dítěti nelže. Testy na obojí jsou
+  // v test/step.test.js.
   const isKnownHole = (coefficient, constant) =>
     coefficient.n < 0 && coefficient.d > 1 && (constant > 0 || coefficient.n !== -1);
 

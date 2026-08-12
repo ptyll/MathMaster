@@ -8,6 +8,34 @@ import { parseSide } from './visualParse.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+/**
+ * Věta, kterou dítě dostane místo váhy, když jednu stranu neumíme přečíst.
+ * Schválně bez pokynu, co má dítě udělat: totéž znění čte i prohlížeč řešení,
+ * kde se rovnice upravovat nedá. Radu, když nějaká platí, přidává krokový
+ * režim vlastním popiskem pod rámem (stepInput.js).
+ */
+const UNREADABLE_NOTE =
+  'Tenhle tvar rovnice ti na váze neukážu - radši nekreslím nic než misky, které by s rovnicí nesouhlasily.';
+
+/**
+ * Přečetl parser stranu? Prázdný výsledek (xTerm i constantText null) NENÍ
+ * prázdná strana, ale „o téhle straně nic nevíme“ - a to jsou dvě různé věci.
+ * SKUTEČNÁ nula přijde jako constantText '0' a prázdnou misku kreslit má.
+ *
+ * Nepřečtené je všechno mimo gramatiku parseSide, a to NEJSOU jen tvary se
+ * záporným znaménkem. Dvě rodiny, na které se dá narazit:
+ *  - záporný zlomkový koeficient ('5 - x/3', '5 - (2/3)x') - ty vyjmenovává
+ *    round-trip test v test/solver.test.js jako známou díru,
+ *  - zlomkový činitel před závorkou ('1/2(x + 6)'), kde není záporné číslo
+ *    ani jedno; gramatika chce před závorkou celé číslo.
+ * Gramatika parseSide se kvůli nim rozšiřovat NEMÁ (byl by to druhý zdroj
+ * pravdy o skladbě strany vedle equationParse), tak se místo obrázku řekne
+ * pravda slovy.
+ */
+function isReadable(side) {
+  return side.xTerm !== null || side.constantText !== null;
+}
+
 function svgEl(tag, attrs = {}) {
   const el = document.createElementNS(SVG_NS, tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -37,18 +65,9 @@ function cube(x, y) {
 /** Obsah misky: pytlíky + kostky podle parsované strany. */
 function panContents(panX, baseY, side) {
   const g = svgEl('g');
-  // Strana, kterou parser NEPŘEČETL (xTerm i constantText jsou null), NENÍ
-  // prázdná strana - jen o ní nic nevíme. Napsat do misky '0' znamenalo tvrdit
-  // dítěti, že tam nic není, což je nepravda o rovnici, kterou má před sebou.
-  // A byla to nepravda přesně naopak: SKUTEČNÁ nula přijde jako constantText
-  // '0' (tedy pravdivá hodnota), ta se sem nikdy nedostala a kreslila se jako
-  // prázdná miska - kdežto '0' se vypisovala jen tam, kde se nevědělo nic.
-  // Tvary, které parser neumí: '(x + 3)/4', '1/4(x + 3)', '5 - (2/3)x',
-  // '5 - x/3' (záporný zlomkový koeficient). Radši nic než nepravda - stejně
-  // to řeší stepInput.js u nesečtené strany, kde váhu rovnou skryje.
-  if (!side.xTerm && !side.constantText) {
-    return g;
-  }
+  // Sem chodí jen strany, které parser PŘEČETL - o nepřečtené se stará show()
+  // tím, že váhu vůbec neukáže. Prázdná miska je tvrzení „na téhle straně nic
+  // není“ a to smí platit jedině o skutečné nule (constantText '0').
   const hasConstant = !!side.constantText && side.constantText !== '0';
 
   if (side.xTerm && side.xTerm.grouped) {
@@ -113,7 +132,9 @@ function panContents(panX, baseY, side) {
 
 /**
  * Vytvoří váhu.
- * @returns {{ element: HTMLElement, show: (leftText: string, rightText: string) => void }}
+ * @returns {{ element: HTMLElement, show: (leftText: string, rightText: string) => boolean }}
+ *   show vrací `false`, když stranu nepřečetl a místo váhy nechal v rámu větu -
+ *   volající tím pozná, že vizualizace na obrazovce NENÍ (a nesmí o ní psát).
  */
 export function createBalanceScale() {
   const wrap = document.createElement('div');
@@ -139,6 +160,13 @@ export function createBalanceScale() {
 
   wrap.appendChild(svg);
 
+  // Náhrada za váhu, když jednu stranu neumíme přečíst. V rámu je vždycky
+  // buď váha, nebo tahle věta - nikdy obojí, aby dítě nečetlo omluvu k obrázku,
+  // který vedle ní stojí.
+  const note = document.createElement('p');
+  note.className = 'balance-note';
+  note.textContent = UNREADABLE_NOTE;
+
   function drawPan(pan, panX, side) {
     pan.innerHTML = '';
     // miska
@@ -148,13 +176,35 @@ export function createBalanceScale() {
 
   return {
     element: wrap,
-    /** Zobrazí nový stav (levá/pravá strana jako text) s krátkým zhoupnutím. */
+    /**
+     * Zobrazí nový stav (levá/pravá strana jako text) s krátkým zhoupnutím.
+     * Když jednu ze stran parser nepřečte, váha se místo kreslení SCHOVÁ
+     * a rám nese větu proč: prázdná miska by dítěti tvrdila, že na té straně
+     * nic není, a od skutečné nuly by se to nedalo rozeznat. Totéž dělá
+     * stepInput.js u nesečtené strany.
+     *
+     * @returns {boolean} nakreslila se váha? (`false` = místo ní stojí věta)
+     */
     show(leftText, rightText) {
-      drawPan(leftPan, 60, parseSide(leftText));
-      drawPan(rightPan, 230 - 45, parseSide(rightText));
+      const left = parseSide(leftText);
+      const right = parseSide(rightText);
+      if (!isReadable(left) || !isReadable(right)) {
+        svg.remove();
+        if (!note.parentNode) {
+          wrap.appendChild(note);
+        }
+        return false;
+      }
+      note.remove();
+      if (!svg.parentNode) {
+        wrap.appendChild(svg);
+      }
+      drawPan(leftPan, 60, left);
+      drawPan(rightPan, 230 - 45, right);
       beamGroup.classList.remove('balance-sway');
       void wrap.offsetWidth; // restart animace
       beamGroup.classList.add('balance-sway');
+      return true;
     },
   };
 }

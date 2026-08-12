@@ -16,6 +16,10 @@ import { effectiveX, effectiveC, needsCombine } from '../content/solver.js';
 
 const VIZ_NOTE_PENDING = 'Váha ukazuje stav před tímhle krokem.';
 const VIZ_NOTE_UNCOMBINED = 'Nejdřív sečti stejné členy, pak ti váhu ukážu.';
+// Rada k tvaru, který váha nepřečte. Platí jedině tehdy, když je v rovnici
+// závorka a tlačítko 'Roztáhnout závorku' je vidět - proto ji nedrží samotná
+// váha (tu čte i prohlížeč řešení, kde se rovnice upravovat nedá).
+const VIZ_NOTE_EXPAND = 'Zkus roztáhnout závorku, pak ti váhu ukážu.';
 
 const OPERATIONS = [
   { kind: 'sub', label: '−', aria: 'Odečti od obou stran' },
@@ -239,12 +243,29 @@ export function createStepInput(container, { session, onFeedback, onSolved }) {
       vizHost.appendChild(createNumberLine(plainSide.n / plainSide.d));
       return;
     }
-    vizHost.hidden = false;
-    vizNote.hidden = session.phase !== 'values';
-    vizNote.textContent = VIZ_NOTE_PENDING;
     vizHost.appendChild(scale.element);
     const [leftText, rightText] = session.equationText.split(' = ');
-    scale.show(leftText, rightText);
+    vizHost.hidden = false;
+    if (!scale.show(leftText, rightText)) {
+      // Váha jednu stranu nepřečetla a místo obrázku nese větu proč
+      // (balanceScale.js). Rám proto zůstává VIDĚT - je v něm ta věta. Schová
+      // se jen popisek pod ním: 'Váha ukazuje stav před tímhle krokem' by nad
+      // vysvětlením, proč váha není, tvrdil pravý opak.
+      //
+      // Tenhle stav dnes v krokovém režimu nevznikne: nepřečtený tvar má buď
+      // záporný zlomkový koeficient (a ten dřív odchytí větev s číselnou osou
+      // výš), nebo zlomkový činitel před závorkou, který žádný generátor
+      // nevyrábí. Až vznikne, unese ho to bez další úpravy.
+      //
+      // Když je v rovnici závorka, má dítě přímo pod tím tlačítko, kterým se
+      // váha vrátí - tak mu to řekneme. Bez závorky žádnou pravdivou radu
+      // nemáme a mlčíme radši, než abychom poslali dítě něco dělat naslepo.
+      vizNote.hidden = !session.hasBracket;
+      vizNote.textContent = VIZ_NOTE_EXPAND;
+      return;
+    }
+    vizNote.hidden = session.phase !== 'values';
+    vizNote.textContent = VIZ_NOTE_PENDING;
   }
 
   function renderOperationPhase() {

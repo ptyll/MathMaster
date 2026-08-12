@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
+import { parseCss, resolveValue } from './cssCascade.js';
 import {
   expr,
   factoredExpr,
@@ -979,17 +981,20 @@ test('výsledek do jednoho celku žádnou větu navíc nedostane', () => {
  * Invariant vyžádaný v revizi návrhu. Váha se krmí TEXTEM strany a čte ho
  * zpátky visualParse.parseSide, takže mezi solverem a UI platí nepsaný kontrakt.
  * Selhat umí dvěma způsoby a ten tišší je horší:
- *  - PRÁZDNÁ miska: '3 - x/2' parseSide nepřečte a balanceScale vypíše '0',
- *    tedy tvrzení, že na misce nic není.
+ *  - NEPŘEČTENÁ strana vydávaná za prázdnou: '3 - x/2' parseSide nepřečte.
+ *    Dřív se to psalo do misky jako '0' (UCV-FIX-001), pak se kreslila
+ *    prázdná miska, což je totéž tvrzení beze slov (UCV-LEARN-001). Dnes
+ *    balanceScale u takové strany váhu vůbec neukáže a napíše dítěti proč -
+ *    prázdná miska zbyla jenom SKUTEČNÉ nule, o které je pravda.
  *  - LŽOUCÍ miska: 'x/2 + x/3' přečte jako x-člen 'x/2' a KONSTANTU 'x/3',
  *    tedy druhý x-člen vydávaný za závaží.
  * Test proto neověřuje, že váha 'něco přečte', ale že přečtené SEDÍ se
  * strojovým stavem kroku (leftExpr/rightExpr, UCN-STEP-001).
  *
- * Nové zlomkové rovnice 4-6 se falešné nule dnes vyhýbají tím, že generátor
- * dává větší koeficient VLEVO. To je ale volba generátoru - tenhle test z ní
- * dělá hlídané pravidlo: při opačné orientaci vznikne '3 - x/2' hned v prvním
- * kroku nápovědy a test spadne.
+ * Nové zlomkové rovnice 4-6 se nepřečtené straně dnes vyhýbají tím, že
+ * generátor dává větší koeficient VLEVO. To je ale volba generátoru - tenhle
+ * test z ní dělá hlídané pravidlo: při opačné orientaci vznikne '3 - x/2' hned
+ * v prvním kroku nápovědy a test spadne.
  */
 function assertScaleTellsTruth(text, side, label) {
   const parsed = parseSide(text);
@@ -1244,8 +1249,7 @@ test('UCV-FIX-001: váha nepřečtenou stranu NEVYKRESLÍ jako nulu', async () =
   // Falešná nula je nepravda, kterou vidí dítě: strana, kterou parseSide
   // nepřečte, se kreslila jako literál '0', tedy "na misce nic není". A byla
   // to nepravda přesně naopak - SKUTEČNÁ nula přijde jako constantText '0' a
-  // do té větve se nikdy nedostala. Tvary, které parser neumí, jsou ty se
-  // záporným zlomkovým koeficientem (známá díra, viz round-trip v solver.test.js).
+  // do té větve se nikdy nedostala.
   const { installDom } = await import('./domStub.js');
   installDom();
   const { createBalanceScale } = await import('../js/ui/balanceScale.js');
@@ -1259,14 +1263,15 @@ test('UCV-FIX-001: váha nepřečtenou stranu NEVYKRESLÍ jako nulu', async () =
       .filter((t) => t === '0');
   };
 
-  // Tyhle čtyři tvary parser NEPŘEČTE - a právě u nich se dřív psala nula.
-  for (const text of ['(x + 3)/4', '1/4(x + 3)', '5 - (2/3)x', '5 - x/3']) {
-    assert.deepEqual(
-      zeroTexts(text, '12'),
-      [],
-      `váha tvrdí '0' u strany '${text}', kterou jen nepřečetla`
-    );
-  }
+  // Číslici '0' hlídáme tam, kde na ni pořád může dojít: u SKUTEČNÉ nuly, která
+  // se kreslí. Prázdná miska o ní mluví dost - kdyby k ní přibyl ještě popisek
+  // '0', vznikne táž nepravda o straně, na které něco je (nula se sečte s x).
+  // U nepřečtených tvarů by tenhle způsob měření od UCV-LEARN-001 nemohl spadnout
+  // NIKDY: váha se u nich celá schová, takže v ní žádný `text` není z podstaty.
+  // Nepřečtené tvary proto měří UCV-LEARN-001 níž jinak - přes misky, které
+  // nevzniknou. Kdyby tenhle řádek zůstal na nich, byl by to vakuový test.
+  assert.deepEqual(zeroTexts('0', '12'), [], 'miska u skutečné nuly nese navíc číslici 0');
+  assert.deepEqual(zeroTexts('x + 0', '12'), [], "strana 'x + 0' nese na misce číslici 0");
 
   // Kontrola opačným směrem: strany, které parser čte, se kreslit nepřestaly.
   // Počítá se uvnitř MISKY, ne v celém svg: statická kostra váhy (nosník,
@@ -1276,7 +1281,7 @@ test('UCV-FIX-001: váha nepřečtenou stranu NEVYKRESLÍ jako nulu', async () =
   // měří opravdu to, co dítě na misce uvidí: 4/4/2/1/7 kostek a pytlíků.
   for (const text of ['12 - x', '10 - 3x', '2(x + 10)', 'x', '7']) {
     const scale = createBalanceScale();
-    scale.show(text, '12');
+    assert.equal(scale.show(text, '12'), true, `váha odmítla čitelnou stranu '${text}'`);
     // Selektor '.balance-pan rect' stub úmyslně neumí a hlásí to výjimkou;
     // rozšiřovat kvůli jednomu testu měřicí přístroj by bylo horší než
     // najít misku a počítat v ní. První miska je levá - tam jde `text`.
@@ -1285,4 +1290,206 @@ test('UCV-FIX-001: váha nepřečtenou stranu NEVYKRESLÍ jako nulu', async () =
     const drawn = leftPan.querySelectorAll('rect').length;
     assert.ok(drawn > 0, `váha přestala kreslit čitelnou stranu '${text}'`);
   }
+});
+
+/* --- UCV-LEARN-001: 'nevím' se nesmí kreslit jako 'nic tam není' --- */
+
+test('UCV-LEARN-001: nepřečtená strana vypadá jinak než skutečná nula', async () => {
+  // UCV-FIX-001 sundalo z misky falešnou nulu, ale zbylo splynutí: nepřečtená
+  // strana i SKUTEČNÁ nula daly bajt po bajtu týž obrázek - prázdnou misku.
+  // Hra tím dítěti tvrdila 'na téhle straně nic není' i tam, kde o straně
+  // nevěděla vůbec nic. Prázdná miska smí patřit jenom nule.
+  const { installDom } = await import('./domStub.js');
+  installDom();
+  const { createBalanceScale } = await import('../js/ui/balanceScale.js');
+
+  /**
+   * Otisk toho, co dítě uvidí. Ne 'nakreslilo se něco', ale CO: misky zvlášť
+   * od jejich obsahu, plus text náhrady. Obsah se počítá UVNITŘ misky -
+   * kostra váhy (nosník, sloup, podstavec) má 3 `rect` i bez volání show(),
+   * takže nad celým svg by měl každý počet podlahu 3.
+   */
+  const fingerprint = (leftText, rightText = '12') => {
+    const scale = createBalanceScale();
+    const drawn = scale.show(leftText, rightText);
+    const pans = scale.element.querySelectorAll('.balance-pan');
+    const obsah = (pan) => (pan ? [pan.querySelectorAll('rect').length, pan.querySelectorAll('text').length] : null);
+    return {
+      drawn,
+      pans: pans.length,
+      left: obsah(pans[0]),
+      right: obsah(pans[1]),
+      note: scale.element.querySelector('.balance-note')?.textContent ?? null,
+    };
+  };
+
+  // Otisk sám potřebuje obě kontroly: kdyby rozlišoval všechno (třeba náhodou
+  // uvnitř), bylo by porovnání níž vakuum; kdyby nerozlišoval nic, spadlo by.
+  assert.deepEqual(fingerprint('0'), fingerprint('0'), 'otisk rozlišuje i dvě shodná vykreslení');
+  assert.notDeepEqual(fingerprint('7'), fingerprint('0'), 'otisk nerozliší ani sedm od nuly');
+
+  // Skutečná nula: prázdná miska je pravda a kreslit se má dál. Druhá miska
+  // ('12') musí něco nést - jinak by 'prázdná vlevo' neměřila nic.
+  const nula = fingerprint('0');
+  assert.equal(nula.drawn, true, 'váha se schovala i u skutečné nuly');
+  assert.equal(nula.pans, 2, 'váha u skutečné nuly nenakreslila obě misky');
+  assert.deepEqual(nula.left, [0, 0], 'skutečná nula přestala kreslit prázdnou misku');
+  assert.ok(nula.right[0] > 0, 'předpoklad testu neplatí - druhá miska je taky prázdná');
+  assert.equal(nula.note, null, 'u skutečné nuly se dítěti omlouváme, místo abychom kreslili');
+
+  // Věta místo váhy se čte z DOM, ne z exportované konstanty: kdyby ji test
+  // porovnával s tímtéž řetězcem, který produkce vypisuje, netvrdil by o ní nic.
+  const veta = fingerprint('5 - x/3').note;
+  assert.ok(veta && veta.trim().length > 20, 'místo váhy nezbyla dítěti věta');
+  assert.equal(/(^|\s)0(\s|$)/.test(veta), false, 'věta místo váhy sama mluví o nule');
+
+  // Nepřečtené tvary (záporný zlomkový koeficient, zlomkový činitel před
+  // závorkou): žádná miska, tedy ani žádné tvrzení o tom, co na ní leží.
+  for (const text of ['(x + 3)/4', '1/4(x + 3)', '5 - (2/3)x', '5 - x/3']) {
+    const neznamy = fingerprint(text);
+    assert.equal(neznamy.drawn, false, `váha tvrdí, že stranu '${text}' nakreslila`);
+    assert.equal(neznamy.pans, 0, `strana '${text}' se kreslí do misky, přestože ji neumíme přečíst`);
+    // Prázdná miska zůstala jen skutečné nule (měřeno výš) a nepřečtená strana
+    // nemá misku vůbec - v tom je ten rozdíl, který dítě uvidí. Souhrnné
+    // 'otisky se liší' se sem NEPÍŠE: po třech tvrzeních výš by nemělo jak
+    // spadnout a vypadalo by jako hlavní záruka testu.
+    assert.equal(neznamy.note, veta, `u '${text}' chybí dítěti věta, proč váha není`);
+
+    // Táž strana VPRAVO. Podmínka v show() má dvě půlky a každá potřebuje
+    // svůj protipříklad: dokud se měřila jen levá miska, šla druhá půlka
+    // smazat a sada zůstala zelená.
+    const vpravo = fingerprint('12', text);
+    assert.equal(vpravo.drawn, false, `váha kreslí, i když je nepřečtená strana '${text}' vpravo`);
+    assert.equal(vpravo.pans, 0, `nepřečtená strana '${text}' vpravo se kreslí do misky`);
+    assert.equal(vpravo.note, veta, `u '${text}' vpravo chybí dítěti věta, proč váha není`);
+  }
+
+  // A zpátky: po čitelné straně se váha vrátí. Táž instance, protože přesně
+  // takhle ji používá prohlížeč řešení - jeden objekt přes všechny kroky.
+  const scale = createBalanceScale();
+  assert.equal(scale.show('5 - x/3', '12'), false, 'příprava testu: nepřečtená strana se nakreslila');
+  // Dva nepřečtené kroky za sebou (prohlížeč řešení jimi listuje) nesmí větu
+  // nasázet dvakrát pod sebe.
+  assert.equal(scale.show('1/4(x + 3)', '12'), false, 'druhý nepřečtený krok se nakreslil');
+  assert.equal(scale.element.querySelectorAll('.balance-note').length, 1, 'věta místo váhy se opakuje');
+  assert.equal(scale.show('3x + 4', '12'), true, 'váha se po nepřečtené straně už nevrátila');
+  assert.equal(scale.show('2x + 1', '12'), true, 'druhý čitelný krok váhu ztratil');
+  assert.equal(scale.element.querySelectorAll('.balance-note').length, 0, 'věta zůstala viset i pod vrácenou váhou');
+  assert.equal(scale.element.querySelectorAll('.balance-svg').length, 1, 'váha se vrátila jinak než jednou');
+  assert.ok(
+    scale.element.querySelectorAll('.balance-pan')[0].querySelectorAll('rect').length > 0,
+    'vrácená váha má prázdnou misku'
+  );
+});
+
+test('UCV-LEARN-001: v krokovém režimu zůstane místo váhy vidět věta i rada', async () => {
+  // Zlomkový činitel před závorkou ('1/2(x + 6)') je tvar, který parseSide
+  // nepřečte a přitom v něm není jediné záporné číslo - nespadne tedy do
+  // větve s číselnou osou a doputuje až k váze. Dnes takovou rovnici žádný
+  // generátor nevyrábí (oba používají factoredExpr s celým činitelem), tenhle
+  // test drží, že ji krokový režim unese, až vznikne.
+  const { installDom, createContainer } = await import('./domStub.js');
+  installDom();
+  const { createStepInput } = await import('../js/ui/stepInput.js');
+  const { createStepSession } = await import('../js/engine/stepSession.js');
+  const { factoredExpr, expr } = await import('../js/content/solver.js');
+
+  const session = createStepSession({
+    equation: { left: factoredExpr(1, 2, 1, 1, 6, 1), right: expr(0, 1, 5, 1) },
+  });
+  assert.equal(session.kind, 'equation', 'předpoklad testu neplatí - nevznikla rovnicová relace');
+  assert.equal(session.equationText, '1/2(x + 6) = 5', 'předpoklad testu neplatí - jiný tvar rovnice');
+
+  const container = createContainer();
+  createStepInput(container, { session, onFeedback: () => {}, onSolved: () => {} });
+  const viz = container.querySelector('.step-viz');
+  const note = container.querySelector('.step-viz-note');
+
+  // Rám ZŮSTÁVÁ vidět, protože je v něm ta věta - kdyby se schoval, dítě by si
+  // přečetlo jen popisek pod ním, a ten je schválně drobný a ztlumený (je to
+  // popiska k obrázku, ne náhrada za něj).
+  assert.equal(viz.hidden, false, 'krokový režim schoval i větu, která místo váhy zbyla');
+  const vetaVRamu = viz.querySelector('.balance-note');
+  assert.ok(vetaVRamu, 'v rámu není věta, proč váha není');
+  assert.ok(vetaVRamu.textContent.trim().length > 20, 'věta místo váhy je prázdná');
+  assert.equal(viz.querySelectorAll('.balance-svg').length, 0, 'váha se v krokovém režimu kreslí dál');
+
+  // Popisek pod rámem se nesmí hádat s větou v něm: 'Váha ukazuje stav před
+  // tímhle krokem' by tvrdil, že váha je vidět. Místo něj rada, která tady
+  // platí - závorka jde roztáhnout a tlačítko na to je hned pod tím.
+  assert.equal(session.hasBracket, true, 'předpoklad testu neplatí - rovnice nemá závorku');
+  assert.equal(note.hidden, false, 'dítě nedostalo radu, přestože závorku roztáhnout může');
+  assert.ok(note.textContent.includes('závorku'), `rada nemluví o závorce: ${JSON.stringify(note.textContent)}`);
+  assert.equal(
+    note.textContent.includes('Váha ukazuje'),
+    false,
+    'pod větou o chybějící váze svítí popisek, že váha něco ukazuje'
+  );
+
+  // Protějšek: čitelná rovnice váhu ukázat MUSÍ, jinak by tvrzení výš platilo
+  // pořád a neměřilo by nic.
+  const citelna = createStepSession({ equation: { left: expr(3, 1, 4, 1), right: expr(0, 1, 19, 1) } });
+  const druhy = createContainer();
+  createStepInput(druhy, { session: citelna, onFeedback: () => {}, onSolved: () => {} });
+  assert.equal(druhy.querySelector('.step-viz').hidden, false, 'krokový režim schoval i čitelnou váhu');
+  assert.equal(druhy.querySelectorAll('.balance-note').length, 0, 'u čitelné rovnice se dítěti omlouváme');
+  assert.equal(druhy.querySelectorAll('.balance-svg').length, 1, 'čitelná rovnice zůstala bez váhy');
+});
+
+test('UCV-LEARN-001: věta místo váhy je čitelná a drží po váze místo', () => {
+  // Věta není popiska k obrázku, ale NÁHRADA obrázku - tak taky musí vypadat.
+  const rules = parseCss(readFileSync(new URL('../css/main.css', import.meta.url), 'utf8'));
+
+  // Text, který má dítě přečíst, se v téhle hře neztlumuje: ztlumená hláška
+  // v dílně už jednou spadla na 2,7:1. Odlišuje se rámečkem, ne šedí.
+  assert.equal(
+    resolveValue(rules, '.balance-note', 'color'),
+    'var(--color-text)',
+    'věta místo váhy je ztlumená, přestože ji má dítě přečíst'
+  );
+  assert.ok(resolveValue(rules, '.balance-note', 'border'), 'věta místo váhy se od okolí ničím neodlišuje');
+
+  // Rozměr drží po váze místo v OBOU směrech. Bez toho se sloupec při přechodu
+  // na nenakreslitelný krok srazí a tlačítka Zpět/Další krok vyskočí dítěti
+  // pod prst - přesně uprostřed klepání.
+  assert.equal(
+    resolveValue(rules, '.balance-note', 'width'),
+    resolveValue(rules, '.balance-svg', 'width'),
+    'věta místo váhy nedrží šířku váhy'
+  );
+  assert.ok(resolveValue(rules, '.balance-note', 'min-height'), 'věta místo váhy nedrží výšku - sloupec poskočí');
+});
+
+test('UCV-LEARN-001: v prohlížeči řešení zůstane u nenakreslitelného kroku vidět rovnice', async () => {
+  // Bez váhy zbude v kroku jen pokyn ('Odečti 3 z obou stran') a vysvětlení -
+  // ale dítě nemá kde vidět, Z ČEHO se odečítá. Osa i zlomkové pásy proto
+  // rovnici píšou textem pod obrázek; váha to musí udělat taky, když se schová.
+  const { installDom, createContainer } = await import('./domStub.js');
+  installDom();
+  const { createSolutionViewer } = await import('../js/ui/solutionViewer.js');
+
+  const krok = (leftSide, rightSide) => ({
+    operation: 'Odečti 3 z obou stran',
+    explanation: 'Obě strany zmenšíme o tři.',
+    leftSide,
+    rightSide,
+  });
+  const otevri = (steps) => {
+    const container = createContainer();
+    createSolutionViewer(container, { exercise: { topic: 'equations', steps }, onClose: () => {} });
+    return container.querySelector('.solution-viz');
+  };
+
+  const nenakreslitelny = otevri([krok('1/4(x + 3)', '12')]);
+  assert.equal(nenakreslitelny.querySelectorAll('.balance-svg').length, 0, 'váha se nakreslila i u tvaru, který nepřečetla');
+  assert.ok(nenakreslitelny.querySelector('.balance-note'), 'chybí věta, proč váha není');
+  const rovnice = nenakreslitelny.querySelector('.solution-equation');
+  assert.ok(rovnice, 'krok bez váhy neukazuje rovnici ani textem');
+  assert.equal(rovnice.textContent, '1/4(x + 3) = 12', `rovnice v kroku zní ${JSON.stringify(rovnice.textContent)}`);
+
+  // Protějšek: když se váha nakreslí, rovnice navíc se pod ni NEPÍŠE - je
+  // vidět na miskách a text by ji jen zdvojil.
+  const citelny = otevri([krok('3x + 4', '19')]);
+  assert.equal(citelny.querySelectorAll('.balance-svg').length, 1, 'čitelný krok zůstal bez váhy');
+  assert.equal(citelny.querySelector('.solution-equation'), null, 'pod nakreslenou váhou je rovnice ještě jednou textem');
 });

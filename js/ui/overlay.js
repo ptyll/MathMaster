@@ -42,6 +42,14 @@ export function createOverlay(titleText, onClose, { closeLabel = 'Zavřít' } = 
   // dílna, inventář i žebříček titulů. Týž precedens má mapScreen.js u pásu
   // planet (strip.tabIndex = 0).
   content.tabIndex = 0;
+  // A protože je to PRVNÍ tab stop dialogu, cyklí sem past fokusu z tlačítka
+  // Zavřít (dialogA11y.js). Dřív past cyklila na nadpis a odečítač u toho
+  // zopakoval, ve kterém dialogu dítě je; nadpis ale v pořadí Tabu není, takže
+  // to byla vada, ne služba. Aby o tu orientaci nevidomé dítě nepřišlo, nese
+  // jméno rovnou rolující oblast. Bez role by ho odečítač zahodil - `div` bez
+  // role je obecný prvek a na ten se aria-label nevztahuje.
+  content.setAttribute('role', 'group');
+  content.setAttribute('aria-label', `${titleText} - obsah`);
 
   const closeBtn = document.createElement('button');
   closeBtn.type = 'button';

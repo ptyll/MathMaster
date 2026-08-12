@@ -128,6 +128,14 @@ export function createSolutionViewer(container, { exercise, onClose, startStep =
   title.focus();
 
   // Escape zavře, Tab cyklí jen uvnitř dialogu (focus trap).
+  //
+  // POZOR, tahle past NENÍ táž jako v js/ui/dialogA11y.js a je slabší: fokus
+  // po otevření stojí na nadpisu (tabindex="-1", tedy mimo pořadí Tabu), a to
+  // není ani `first`, ani `last`, a v panelu leží - takže Shift+Tab z něj
+  // nespustí žádnou větev a odveze dítě na obrazovku mise POD dialogem. Tentýž
+  // tvar vady se ve sdíleném rámci opravoval a je z něj vidět i oprava:
+  // počítat pořadí Tabu (viz TAB_STOPS/FOCUSABLE tam) místo výčtu tlačítek.
+  // Než se to sjednotí, neopisujte tenhle blok jinam.
   function close() {
     destroy();
     onClose();

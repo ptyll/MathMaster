@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import {
   expr,
   factoredExpr,
+  multiTermSide,
+  needsCombine,
   solveLinearSteps,
   isFactored,
   factorOf,
@@ -19,6 +21,7 @@ import {
   describeOperation,
 } from '../js/content/stepCheck.js';
 import { createStepSession } from '../js/engine/stepSession.js';
+import { parseSide } from '../js/ui/visualParse.js';
 import { generateSimpleEquation, generateLinearEquation } from '../js/content/equations.js';
 import { generateFractionExercise } from '../js/content/fractionExercises.js';
 import { generateFractionEquation } from '../js/content/fractionEquations.js';
@@ -624,14 +627,24 @@ test('rovnice s x na obou stranách se dá vyřešit odečtením x-členu', () =
   assert.equal(s.equationState.right.x.n, 0, 'x zmizelo z pravé strany');
 });
 
-test('vyšší strop obtížnosti nerozbije zlomky ani rovnice se zlomky', async () => {
+test('zlomková témata umí celou stupnici 1-6 a stupně se nepřekrývají', async () => {
   const { generateForTopic } = await import('../js/engine/mission.js');
+  // Dřív se obě zlomková témata ořezávala na 3, takže deklarované 4-6 na
+  // endgame planetách nemělo žádný efekt (DEC-019). Teď musí stupeň dojít
+  // až do zadání - a každý stupeň dát JINÝ příklad, jinak je to zas kosmetika.
+  const fractionTexts = new Set();
+  const equationTexts = new Set();
   for (let d = 1; d <= 6; d++) {
-    const fr = generateForTopic('fractions', 99 * d, d, 0);
-    const fe = generateForTopic('fractionEquations', 77 * d, d);
-    assert.ok(fr.difficulty <= 3, `zlomky se drží na 3, dostal ${fr.difficulty}`);
-    assert.ok(fe.difficulty <= 3, `rovnice se zlomky se drží na 3, dostal ${fe.difficulty}`);
+    const fr = generateForTopic('fractions', 99, d, 0);
+    const fe = generateForTopic('fractionEquations', 77, d);
+    assert.equal(fr.difficulty, d, `zlomky neunesly stupeň ${d}`);
+    assert.equal(fe.difficulty, d, `rovnice se zlomky neunesly stupeň ${d}`);
+    assert.ok(fr.steps.length >= 1 && fe.steps.length >= 1, `stupeň ${d} bez kroků řešení`);
+    fractionTexts.add(fr.text);
+    equationTexts.add(fe.text);
   }
+  assert.equal(fractionTexts.size, 6, `zlomky opakují zadání napříč stupni: ${[...fractionTexts]}`);
+  assert.equal(equationTexts.size, 6, `rovnice opakují zadání napříč stupni: ${[...equationTexts]}`);
 });
 
 /* --- záporné x: -x = -11 --- */
@@ -907,4 +920,160 @@ test('celá relace (2/9)x + 3/4 = 43/36 přes vynásobení devíti', () => {
   }
   assert.equal(s.isDone, true);
   assert.equal(s.getOutcome().mistakes, 0);
+});
+
+/* --- Zlomková relace: popisky a věta o přesahu celku (UCN-MATH-003) -------- */
+
+test('pás celého operandu se popíše "2", ne "2/1"', () => {
+  // Zadání i otázka relace píšou '2' - popisek pásu byl jediné místo,
+  // které tvrdilo '2/1'. Celý operand se objeví od obtížnosti 4.
+  const session = createStepSession({
+    topic: 'fractions',
+    kind: 'subtract',
+    operands: [makeFraction(2), makeFraction(3, 4)],
+  });
+  assert.deepEqual(
+    session.bars.map((bar) => bar.label),
+    ['2', '3/4']
+  );
+  assert.match(session.question.prompt, /pro 2 a 3\/4/);
+});
+
+test('výsledek přesahující celek relace pojmenuje, ne odbude tichem', () => {
+  // Nová myšlenka obtížnosti 5 (nepravý operand): u výsledku v základním tvaru
+  // relace po sečtení čitatelů rovnou končí, takže bez téhle věty by o přesahu
+  // celku nepadlo ani slovo.
+  const session = createStepSession({
+    topic: 'fractions',
+    kind: 'add',
+    operands: [makeFraction(7, 4), makeFraction(5, 6)],
+  });
+  session.submitValue({ kind: 'int', value: 12 });   // společný jmenovatel
+  session.submitValue({ kind: 'int', value: 21 });   // 7/4 = 21/12
+  session.submitValue({ kind: 'int', value: 10 });   // 5/6 = 10/12
+  const solved = session.submitValue({ kind: 'int', value: 31 });
+
+  assert.equal(solved.status, 'solved');
+  assert.ok(solved.note, 'chybí věta o přesahu celku');
+  assert.ok(solved.note.includes('31/12'), solved.note);
+  assert.ok(/víc než celek/.test(solved.note), solved.note);
+});
+
+test('výsledek do jednoho celku žádnou větu navíc nedostane', () => {
+  const session = createStepSession({
+    topic: 'fractions',
+    kind: 'add',
+    operands: [makeFraction(1, 4), makeFraction(1, 2)],
+  });
+  session.submitValue({ kind: 'int', value: 4 });
+  session.submitValue({ kind: 'int', value: 2 });
+  const solved = session.submitValue({ kind: 'int', value: 3 });
+  assert.equal(solved.status, 'solved');
+  assert.equal(solved.note, null);
+});
+
+/* --- Váha nesmí tvrdit nic jiného, než co v rovnici je (UCN-MATH-004) ------ */
+
+/*
+ * Invariant vyžádaný v revizi návrhu. Váha se krmí TEXTEM strany a čte ho
+ * zpátky visualParse.parseSide, takže mezi solverem a UI platí nepsaný kontrakt.
+ * Selhat umí dvěma způsoby a ten tišší je horší:
+ *  - PRÁZDNÁ miska: '3 - x/2' parseSide nepřečte a balanceScale vypíše '0',
+ *    tedy tvrzení, že na misce nic není.
+ *  - LŽOUCÍ miska: 'x/2 + x/3' přečte jako x-člen 'x/2' a KONSTANTU 'x/3',
+ *    tedy druhý x-člen vydávaný za závaží.
+ * Test proto neověřuje, že váha 'něco přečte', ale že přečtené SEDÍ se
+ * strojovým stavem kroku (leftExpr/rightExpr, UCN-STEP-001).
+ *
+ * Nové zlomkové rovnice 4-6 se falešné nule dnes vyhýbají tím, že generátor
+ * dává větší koeficient VLEVO. To je ale volba generátoru - tenhle test z ní
+ * dělá hlídané pravidlo: při opačné orientaci vznikne '3 - x/2' hned v prvním
+ * kroku nápovědy a test spadne.
+ */
+function assertScaleTellsTruth(text, side, label) {
+  const parsed = parseSide(text);
+  if (isFactored(side)) {
+    // Součinový tvar: konstanta je schválně UVNITŘ pytlíku ('2(x + 10)' =
+    // dva stejné pytlíky, v každém x a deset), takže se zvlášť nekontroluje.
+    assert.ok(
+      parsed.xTerm && parsed.xTerm.grouped === true,
+      `${label}: závorka '${text}' se na váze nevykreslí jako pytlík`
+    );
+    return;
+  }
+  if (side.x.n === 0 && side.c.n === 0) {
+    // Poctivá nula: na misce opravdu nic není. Jediné místo, kde '0' smí být.
+    assert.equal(parsed.constantText, '0', `${label}: nulová strana '${text}'`);
+    return;
+  }
+  assert.equal(
+    parsed.xTerm !== null,
+    side.x.n !== 0,
+    `${label}: váha čte x-člen ve '${text}' jinak, než co v rovnici je`
+  );
+  assert.equal(
+    parsed.constantText !== null,
+    side.c.n !== 0,
+    `${label}: váha čte konstantu ve '${text}' jinak, než co v rovnici je`
+  );
+}
+
+/** Strana s nesčtenými členy se na váhu vůbec nepouští (stepInput ji skryje). */
+const drawnOnScale = (side) => !needsCombine(side);
+
+function checkExerciseAgainstScale(exercise, label) {
+  const start = exercise.equation;
+  if (start) {
+    // Výchozí stav = obrazovka, na kterou dítě kouká celou misi. Jediné místo,
+    // kde se na váhu dostane závorka (řešič ji vydělí před prvním krokem).
+    for (const name of ['left', 'right']) {
+      if (drawnOnScale(start[name])) {
+        assertScaleTellsTruth(formatExprRef(start[name]), start[name], `${label} / zadání ${name}`);
+      }
+    }
+  }
+  for (const [i, step] of exercise.steps.entries()) {
+    if (!step.leftExpr || !step.rightExpr) {
+      continue; // kroky zlomkové aritmetiky kreslí pásy, ne váhu
+    }
+    if (drawnOnScale(step.leftExpr)) {
+      assertScaleTellsTruth(step.leftSide, step.leftExpr, `${label} / krok ${i + 1} vlevo`);
+    }
+    if (drawnOnScale(step.rightExpr)) {
+      assertScaleTellsTruth(step.rightSide, step.rightExpr, `${label} / krok ${i + 1} vpravo`);
+    }
+  }
+}
+
+test('váha nikde netvrdí nic jiného, než co v rovnici doopravdy je', () => {
+  for (let seed = 1; seed <= 200; seed++) {
+    for (let difficulty = 1; difficulty <= 6; difficulty++) {
+      checkExerciseAgainstScale(
+        generateFractionEquation(seed, difficulty),
+        `zlomková rovnice d${difficulty} seed ${seed}`
+      );
+    }
+    for (let difficulty = 1; difficulty <= 3; difficulty++) {
+      checkExerciseAgainstScale(generateSimpleEquation(seed, difficulty), `jednoduchá d${difficulty} seed ${seed}`);
+    }
+    for (let difficulty = 1; difficulty <= 4; difficulty++) {
+      checkExerciseAgainstScale(generateLinearEquation(seed, difficulty), `lineární d${difficulty} seed ${seed}`);
+    }
+  }
+});
+
+test('lžoucí miska by testem neprošla - proto se nesečtená strana nekreslí', () => {
+  // Doklad, že invariant chytá i tu tišší vadu: 'x/2 + x/3' se přečte jako
+  // x-člen a KONSTANTA 'x/3'. Právě proto má stepInput guard, který u
+  // nesečtené strany váhu skryje - kdyby zmizel, tohle by dítě vidělo.
+  const side = multiTermSide([
+    { x: { n: 1, d: 2 }, c: { n: 0, d: 1 } },
+    { x: { n: 1, d: 3 }, c: { n: 0, d: 1 } },
+  ]);
+  assert.equal(needsCombine(side), true, 'strana se dvěma x-členy se musí nejdřív sečíst');
+  assert.throws(() => assertScaleTellsTruth(formatExprRef(side), side, 'lžoucí miska'));
+  // A prázdná miska: záporný zlomkový koeficient za kladnou konstantou.
+  const empty = expr(-1, 2, 3, 1);
+  assert.equal(formatExprRef(empty), '3 - x/2');
+  assert.throws(() => assertScaleTellsTruth(formatExprRef(empty), empty, 'prázdná miska'));
 });

@@ -349,7 +349,7 @@ const asInput = (value) =>
 
 /* --- Řešení jedné relace ------------------------------------------------- */
 
-function solveEquationSession(session, label, played) {
+function solveEquationSession(session, label, played, source = 'wordProblem') {
   let steps = 0;
   let pendingNext = null;
   while (!session.isDone) {
@@ -384,6 +384,7 @@ function solveEquationSession(session, label, played) {
       chosen = operation;
       if (operation.kind === 'combine') {
         played.combines++;
+        played.combinesBySource[source] = (played.combinesBySource[source] ?? 0) + 1;
       }
       break;
     }
@@ -426,6 +427,7 @@ function solveFractionSession(session, exercise, label) {
  */
 function playExercise(exercise, label, played) {
   played.exercises++;
+  played.difficulties.add(`${exercise.topic}:${exercise.difficulty}`);
   const session = createStepSession(exercise);
   if (!session.isActive) {
     assert.ok(exercise.answer, `${label}: úloha bez krokového režimu musí mít odpověď`);
@@ -440,7 +442,7 @@ function playExercise(exercise, label, played) {
     assert.ok(session.recordEquationResult(written).advanced, `${label}: uznaná rovnice nepustila do kroků`);
     solveEquationSession(session.equationSession, label, played);
   } else {
-    solveEquationSession(session, label, played);
+    solveEquationSession(session, label, played, exercise.topic);
   }
   assert.ok(session.isDone, `${label}: relace skončila nedořešená`);
   return session.getOutcome();
@@ -456,7 +458,7 @@ test('TDD-MAP-002-H: každá mise ve hře je průchodná a každý příklad má
   // A hlavně: každý příklad se automatickým hráčem OPRAVDU dořeší krokovým
   // režimem až do konce. Bez toho by test zůstal zelený i nad příkladem,
   // který hráč na obrazovce nemá jak dokončit.
-  const played = { exercises: 0, combines: 0, wordProblems: 0 };
+  const played = { exercises: 0, combines: 0, wordProblems: 0, combinesBySource: {}, difficulties: new Set() };
   for (const planet of PLANETS) {
     for (const mission of planet.missions) {
       for (const seed of PLAYTHROUGH_SEEDS) {
@@ -497,8 +499,33 @@ test('TDD-MAP-002-H: každá mise ve hře je průchodná a každý příklad má
   // slovní úlohy psát rovnou sečtené, cesta přes 'sečíst stejné členy' by se
   // tiše přestala testovat.
   assert.ok(played.exercises > 1000, `málo příkladů: ${played.exercises}`);
-  assert.equal(played.combines, played.wordProblems, 'každá slovní úloha má projít sečtením členů');
+  // Sečtení členů vzniká nově ze DVOU zdrojů: z hráčem psané rovnice u slovních
+  // úloh (tam ho musí projít každá) a ze zlomkových rovnic stupně 4, kde je to
+  // nová dovednost. Rovnost by tedy platit přestala - drží se ale to, co
+  // pojistka opravdu hlídá: každá slovní úloha tudy projde a obě cesty žijí.
+  assert.equal(
+    played.combinesBySource.wordProblem,
+    played.wordProblems,
+    'každá slovní úloha má projít sečtením členů'
+  );
+  assert.ok(played.combines >= played.wordProblems, 'combine nesmí ubýt');
   assert.ok(played.combines > 500, `málo kroků combine: ${played.combines}`);
+  assert.ok(
+    played.combinesBySource.fractionEquations > 0,
+    'zlomkové rovnice stupně 4 se v žádné misi nedohrály přes sečtení členů'
+  );
+  // Průchodnost nových stupňů není hotová tím, že testy jsou zelené - musí se
+  // doopravdy odehrát. Endgame planety je startují (Kamino 4-6, Mustafar 5+),
+  // takže když tu některý chybí, buď ho ořezal strop tématu, nebo se do misí
+  // vůbec nedostal a jeho průchodnost nikdo neověřil.
+  for (const topic of ['fractions', 'fractionEquations']) {
+    for (const difficulty of [4, 5, 6]) {
+      assert.ok(
+        played.difficulties.has(`${topic}:${difficulty}`),
+        `auto-hráč nikdy nehrál ${topic} na obtížnosti ${difficulty}: ${[...played.difficulties].sort()}`
+      );
+    }
+  }
 });
 
 test('getMission a getNextMission', () => {

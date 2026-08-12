@@ -7,8 +7,9 @@
 export const MIN_DIFFICULTY = 1;
 /**
  * Šest stupňů kvůli rovnicím: 1-2 jednoduché, 3 ax=b, 4 ax+b=c,
- * 5 závorky, 6 x na obou stranách. Zlomky si stupnici samy zkracují
- * na 3 (viz generateForTopic), takže je vyšší strop neovlivní.
+ * 5 závorky, 6 x na obou stranách. Zlomkové generátory mají od
+ * UCN-MATH-003 vlastní stupně 4-6, takže šestku využívají všechna
+ * témata (TOPIC_MAX_DIFFICULTY je u všech 6) a výš by se opakovaly.
  */
 export const MAX_DIFFICULTY = 6;
 

@@ -1,7 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { expr, formatExpr, evaluateExpr, solveLinearSteps, solvedValue } from '../js/content/solver.js';
+import {
+  expr,
+  formatExpr,
+  evaluateExpr,
+  solveLinearSteps,
+  solvedValue,
+  formatXMagnitude,
+  formatXTerm,
+} from '../js/content/solver.js';
+import { describeOperation } from '../js/content/stepCheck.js';
+import { parseSide } from '../js/ui/visualParse.js';
 import { makeFraction, fractionsEqual } from '../js/content/fractions.js';
 
 test('TDD-MATH-005-A: krokové řešení 3x + 4 = 10', () => {
@@ -90,4 +100,73 @@ test('evaluateExpr dosazuje i zlomky', () => {
   assert.deepEqual(value, { n: 1, d: 2 });
   const withConst = evaluateExpr(expr(2, 1, 1, 1), makeFraction(3, 4));
   assert.deepEqual(withConst, { n: 5, d: 2 });
+});
+
+/* ------------------------------------------------------------------------ */
+/* Jednotný zápis x-členu (UCN-MATH-003/004)                                 */
+/* ------------------------------------------------------------------------ */
+
+test('formatXMagnitude je jediný zdroj pravdy pro zápis koeficientu u x', () => {
+  assert.equal(formatXMagnitude({ n: 1, d: 1 }), 'x');
+  assert.equal(formatXMagnitude({ n: 1, d: 5 }), 'x/5');
+  assert.equal(formatXMagnitude({ n: 3, d: 1 }), '3x');
+  assert.equal(formatXMagnitude({ n: 2, d: 3 }), '(2/3)x');
+  assert.equal(formatXTerm({ n: -1, d: 1 }), '-x');
+  assert.equal(formatXTerm({ n: -2, d: 3 }), '-(2/3)x');
+});
+
+test('pokyn kroku, tlačítko i zadání píšou týž x-člen stejně', () => {
+  // Zlomkový koeficient na PRAVÉ straně je tvar, který zlomkové rovnice
+  // s x na obou stranách probouzí poprvé. Dřív hra o témž členu psala
+  // 'x/5' v zadání, '1/5x' v pokynu a '(1/5)x' v náhledu.
+  for (const coefficient of [{ n: 1, d: 5 }, { n: 2, d: 3 }, { n: 3, d: 1 }, { n: 1, d: 1 }]) {
+    const inTask = formatExpr(expr(coefficient.n, coefficient.d, 0, 1));
+    const inButton = describeOperation({ kind: 'sub', term: 'x', operand: coefficient });
+    const inStep = solveLinearSteps(expr(5, 1, 0, 1), expr(coefficient.n, coefficient.d, 12, 1))[0]
+      .operation;
+    assert.ok(
+      inButton.includes(inTask),
+      `tlačítko '${inButton}' nepíše x-člen jako zadání '${inTask}'`
+    );
+    assert.ok(
+      inStep.includes(inTask),
+      `pokyn kroku '${inStep}' nepíše x-člen jako zadání '${inTask}'`
+    );
+  }
+});
+
+test('co formatPlain napíše, to parseSide pro váhu přečte (round-trip)', () => {
+  // Váha stojí na nepsaném kontraktu mezi solverem (píše) a visualParse
+  // (čte zpátky). Bez tohohle testu se můžou rozejít potichu: strana, kterou
+  // parseSide nepřečte, se na váze vykreslí jako literál '0', tedy tvrzení,
+  // že na misce nic není.
+  //
+  // ZNÁMÁ DÍRA (carry-forward, nikoli regrese): stranu se ZÁPORNÝM ZLOMKOVÝM
+  // koeficientem parseSide nepřečte - ř. 44 i ř. 54 chtějí '(\d*)x'. Konkrétně
+  // '4 - x/3', '4 - (2/3)x', '-(3/2)x' i '-(3/2)x - 4'. Jediná výjimka, která
+  // projde, je záporný JEDNOTKOVÝ zlomek bez kladné konstanty ('-x/3'), na ten
+  // gramatika pamatuje. Žádný generátor takový tvar nevyrábí a zlomkové stupně
+  // 4-6 se mu vyhýbají, proto se to opravuje mimo tuhle fázi.
+  const isKnownHole = (coefficient, constant) =>
+    coefficient.n < 0 && coefficient.d > 1 && (constant > 0 || coefficient.n !== -1);
+
+  let holes = 0;
+  for (let d = 1; d <= 12; d++) {
+    for (let n = 1; n <= 12; n++) {
+      for (const sign of [1, -1]) {
+        for (const constant of [0, 4, -4]) {
+          const coefficient = makeFraction(sign * n, d);
+          const text = formatExpr(expr(coefficient.n, coefficient.d, constant, 1));
+          const readable = parseSide(text).xTerm !== null;
+          if (isKnownHole(coefficient, constant)) {
+            holes++;
+            assert.ok(!readable, `'${text}' se čte - známá díra zmizela, aktualizuj carry-forward`);
+          } else {
+            assert.ok(readable, `váha nepřečte '${text}', který solver vyrábí`);
+          }
+        }
+      }
+    }
+  }
+  assert.ok(holes > 0, 'test nezkusil ani jeden případ známé díry');
 });

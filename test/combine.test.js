@@ -466,3 +466,34 @@ test('DEC-012: relace umí startovat přímo z multiTerm výstupu parseru', () =
   assert.equal(s.isDone, true);
   assert.equal(s.getOutcome().mistakes, 0);
 });
+
+test('krok "Sečti stejné členy" jmenuje konkrétní členy i jejich součet', () => {
+  // Strany kroku nesou stav PO sečtení ('(5/6)x = 5'), takže bez tohohle textu
+  // by dítě tvar 'x/2 + x/3' v nápovědě nespatřilo nikde a krok by pojmenovával
+  // pohyb, který nikde neukáže. U rovnic je nápověda v režimu váhy jediný
+  // zdroj - text rovnice tam solutionViewer nekreslí.
+  const left = multiTermSide([
+    { x: { n: 1, d: 2 }, c: { n: 0, d: 1 } },
+    { x: { n: 1, d: 3 }, c: { n: 0, d: 1 } },
+  ]);
+  const steps = solveLinearSteps(left, expr(0, 1, 5, 1));
+
+  assert.equal(steps[0].operation, 'Sečti stejné členy na levé straně');
+  assert.equal(steps[0].leftSide, '(5/6)x', 'strany kroku mají nést stav PO sečtení');
+  assert.ok(steps[0].explanation.includes('x/2 + x/3'), `chybí sčítané členy: ${steps[0].explanation}`);
+  assert.ok(steps[0].explanation.includes('(5/6)x'), `chybí výsledek sečtení: ${steps[0].explanation}`);
+});
+
+test('sečtení na obou stranách pojmenuje obě', () => {
+  const left = multiTermSide([
+    { x: { n: 2, d: 1 }, c: { n: 0, d: 1 } },
+    { x: { n: 1, d: 1 }, c: { n: 0, d: 1 } },
+  ]);
+  const right = multiTermSide([
+    { x: { n: 0, d: 1 }, c: { n: 4, d: 1 } },
+    { x: { n: 0, d: 1 }, c: { n: 5, d: 1 } },
+  ]);
+  const explanation = solveLinearSteps(left, right)[0].explanation;
+  assert.ok(explanation.includes('2x + x'), explanation);
+  assert.ok(explanation.includes('4 + 5'), explanation);
+});

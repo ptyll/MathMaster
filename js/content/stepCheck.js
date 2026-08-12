@@ -32,6 +32,7 @@ import {
   expandExpr,
   needsCombine,
   combineSide,
+  formatXMagnitude,
 } from './solver.js';
 
 /**
@@ -392,12 +393,10 @@ export function describeOperation(operation) {
     return `Sečti stejné členy na ${operation.side === 'left' ? 'levé' : 'pravé'} straně`;
   }
   const term = operation.term ?? 'const';
+  // Text na tlačítku a v historii kroků - tedy to, co dítě čte nejčastěji.
+  // Zápis x-členu bere ze společného formátovače, aby zněl stejně jako zadání.
   const amount =
-    term === 'x'
-      ? isUnit(operation.operand)
-        ? 'x'
-        : `${formatNumber(operation.operand)}x`
-      : formatNumber(operation.operand);
+    term === 'x' ? formatXMagnitude(operation.operand) : formatNumber(operation.operand);
 
   switch (operation.kind) {
     case 'add':

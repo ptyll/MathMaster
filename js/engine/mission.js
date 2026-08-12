@@ -10,7 +10,18 @@ import { generateFractionEquation } from '../content/fractionEquations.js';
 import { generateWordProblem } from '../content/wordProblems.js';
 import { nextDifficulty, shouldOfferHint } from '../content/adaptive.js';
 
-/** Druhy zlomkových úloh se v misi střídají, aby to nebyla nuda. */
+/**
+ * Druhy zlomkových úloh se v misi střídají, aby to nebyla nuda.
+ *
+ * TICHÁ VAZBA: druh se cyklí TÝMŽ indexem jako téma (viz spawn níž), takže na
+ * víctematické planetě padnou jen druhy ze zbytkové třídy toho tématu a zbytek
+ * je tam NEDOSAŽITELNÝ NAVŽDY - Kamino vidí jen add/simplify/compare, Mustafar
+ * a Coruscant subtract/compare, Bespin subtract/equivalent/expand, jednotematický
+ * Dagobah všech šest. Kdo změní exerciseCount nebo počet témat planety, mění tím
+ * MNOŽINU druhů, které tam dítě kdy uvidí. `expand` (index 5) navíc padne jen v
+ * prodlouženém boss souboji, protože boss nemá exerciseCount a index roste jen
+ * za správné odpovědi - potká ho tedy dítě, kterému se zrovna nedaří.
+ */
 const FRACTION_KINDS = ['add', 'subtract', 'simplify', 'equivalent', 'compare', 'expand'];
 
 /**
@@ -21,8 +32,8 @@ const FRACTION_KINDS = ['add', 'subtract', 'simplify', 'equivalent', 'compare', 
  */
 const TOPIC_MAX_DIFFICULTY = Object.freeze({
   equations: 6,
-  fractions: 3,
-  fractionEquations: 3,
+  fractions: 6,
+  fractionEquations: 6,
   wordProblems: 6,
 });
 
@@ -30,8 +41,10 @@ const TOPIC_MAX_DIFFICULTY = Object.freeze({
  * Sjednocený generátor: téma + obtížnost -> příklad.
  * equations: 1-2 jednoduché, 3-6 s násobením (mapováno na jeho 1-4,
  *   tedy až po závorky a x na obou stranách).
- * fractions: druhy se cyklí podle indexu, obtížnost max 3.
- * fractionEquations: obtížnost max 3.
+ * fractions: druhy se cyklí podle indexu, obtížnost 1-6 (4: celé číslo se
+ *   zlomkem, 5: nepravý operand, 6: nepravý operand a nutné krácení).
+ * fractionEquations: obtížnost 1-6 (4: dva x-členy, 5: x na obou stranách,
+ *   6: obě strany i konstanty zlomkové).
  * wordProblems: 2-6 (generátor si spodní kraj hlídá i sám).
  * Obtížnost mimo rozsah se ořízne na strop tématu - mise ani adaptivita
  * pak nemusí vědět, kde má které téma konec.

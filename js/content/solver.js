@@ -152,6 +152,35 @@ export function formatExpr(e) {
   return formatPlain(e);
 }
 
+/**
+ * JEDINÝ zdroj pravdy pro zápis 'koeficient krát x' bez znaménka:
+ * 'x' | 'x/9' | '3x' | '(2/3)x'. Tenhle tvar zní v zadání příkladu, takže
+ * ho musí používat i pokyny kroků, tlačítka a náhledy - jinak hra píše týž
+ * člen několika způsoby a dítě čte v pokynu '1/5x' a o řádek výš 'x/5'.
+ *
+ * POZOR: výsledek musí zůstat uvnitř gramatiky visualParse.parseSide, která
+ * ho čte zpátky pro váhu. Kdo sem sáhne, ať doplní round-trip test v
+ * test/solver.test.js.
+ * @param {{n: number, d: number}} magnitude koeficient v absolutní hodnotě
+ */
+export function formatXMagnitude(magnitude) {
+  if (magnitude.n === 1 && magnitude.d === 1) {
+    return 'x';
+  }
+  // Koeficient 1/d píšeme jako 'x/9', ne '(1/9)x' - tak zní i zadání
+  // a pro dítě je to čitelnější zápis dělení.
+  if (magnitude.n === 1) {
+    return `x/${magnitude.d}`;
+  }
+  return isWhole(magnitude) ? `${magnitude.n}x` : `(${formatNumber(magnitude)})x`;
+}
+
+/** Zápis x-členu VČETNĚ znaménka: 'x', '-x', 'x/5', '-(2/3)x'. */
+export function formatXTerm(x) {
+  const body = formatXMagnitude({ n: Math.abs(x.n), d: x.d });
+  return x.n < 0 ? `-${body}` : body;
+}
+
 function formatPlain(e) {
   const hasX = e.x.n !== 0;
   const hasC = e.c.n !== 0;
@@ -160,16 +189,7 @@ function formatPlain(e) {
   }
 
   const magnitude = { n: Math.abs(e.x.n), d: e.x.d };
-  const xBody =
-    magnitude.n === 1 && magnitude.d === 1
-      ? 'x'
-      : // Koeficient 1/d píšeme jako 'x/9', ne '(1/9)x' - tak zní i zadání
-        // a pro dítě je to čitelnější zápis dělení.
-        magnitude.n === 1
-        ? `x/${magnitude.d}`
-        : isWhole(magnitude)
-          ? `${magnitude.n}x`
-          : `(${formatNumber(magnitude)})x`;
+  const xBody = formatXMagnitude(magnitude);
   const xNegative = e.x.n < 0;
   const signedX = xNegative ? `-${xBody}` : xBody;
 
@@ -260,13 +280,22 @@ export function solveLinearSteps(left, right) {
   //     'x + x + 8 = 20 + x' beze slova změnilo na 'x + 8 = 20', a nevědělo,
   //     kde se to stalo. Stav po kroku už je kanonický (viz výše).
   if (needsCombine(from.l) || needsCombine(from.r)) {
+    const uncombined = [from.l, from.r].filter((side) => needsCombine(side));
     const where =
-      needsCombine(from.l) && needsCombine(from.r)
+      uncombined.length === 2
         ? 'obou stranách'
         : `${needsCombine(from.l) ? 'levé' : 'pravé'} straně`;
+    // Vysvětlení jmenuje KONKRÉTNÍ členy a jejich součet. Bez toho by krok
+    // pojmenovával pohyb, který nikde neukáže: strany kroku už nesou stav PO
+    // sečtení, takže tvar 'x/2 + x/3' by dítě v nápovědě nespatřilo nikde.
+    // Členy bereme z from.* (ještě nesečtené) a kreslíme je formatTerms, aby
+    // nepřibyl další zápis x-členu vedle společného formátovače.
+    const named = uncombined
+      .map((side) => `${formatTerms(side.terms)} je totéž co ${formatExpr(canonicalSide(side))}`)
+      .join(', ');
     push(
       `Sečti stejné členy na ${where}`,
-      'Stejné druhy členů sečteme dohromady - hodnota strany se tím nemění, jen se zpřehlední.'
+      `${named}. Stejné druhy členů sečteme dohromady - hodnota strany se tím nemění, jen se zpřehlední.`
     );
   }
 
@@ -289,7 +318,10 @@ export function solveLinearSteps(left, right) {
   // 1. Přesunout x-člen z pravé strany doleva.
   if (r.x.n !== 0) {
     const amount = { n: Math.abs(r.x.n), d: r.x.d };
-    const amountText = amount.n === 1 && amount.d === 1 ? 'x' : `${formatNumber(amount)}x`;
+    // Zápis přes společný formátovač: pokyn tak zní stejně jako zadání
+    // ('Odečti x/5', ne 'Odečti 1/5x'). U zlomkových rovnic s x na obou
+    // stranách je tohle první místo, kde se ten rozdíl projeví.
+    const amountText = formatXMagnitude(amount);
     const operation =
       r.x.n > 0
         ? `Odečti ${amountText} z obou stran`

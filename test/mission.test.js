@@ -129,7 +129,8 @@ test('TDD-MAP-002-D: obtížnost nad stropem tématu (Mustafar 7) generátor une
   }
   // Obtížnost 7 dává stejné (nejtěžší) zadání jako 6 - výš generátory nic nemají.
   assert.deepEqual(generateForTopic('equations', 99, 7), generateForTopic('equations', 99, 6));
-  assert.deepEqual(generateForTopic('fractionEquations', 99, 7), generateForTopic('fractionEquations', 99, 3));
+  assert.deepEqual(generateForTopic('fractionEquations', 99, 7), generateForTopic('fractionEquations', 99, 6));
+  assert.deepEqual(generateForTopic('fractions', 99, 7, 0), generateForTopic('fractions', 99, 6, 0));
 });
 
 test('nečíselná obtížnost spadne na nejlehčí úroveň místo NaN v zadání', () => {

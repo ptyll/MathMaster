@@ -26,7 +26,7 @@ import {
   describeOperation,
   cloneState,
 } from '../content/stepCheck.js';
-import { formatExpr, formatTerms, isFactored, needsCombine } from '../content/solver.js';
+import { formatExpr, formatTerms, isFactored, needsCombine, formatXTerm } from '../content/solver.js';
 import { EQUATION_SETUP_ERROR } from '../content/equationParse.js';
 import {
   makeFraction,
@@ -46,6 +46,26 @@ const MISTAKES_BEFORE_HELP = 2;
 const NOTE_ALREADY_SOLVED = 'To je už výsledek - napiš rovnici, která popisuje zadání.';
 /** Kolik kroků bez pokroku za sebou zvýrazní nápovědu. */
 const NO_PROGRESS_BEFORE_HINT = 3;
+
+/**
+ * Věta pro výsledek, který přesáhl celek. Bez ní by nová myšlenka stupně 5
+ * (nepravý operand) nikde nezazněla: u výsledku v základním tvaru relace po
+ * sečtení čitatelů rovnou končí, takže by ji neslo jen ticho a obrázek.
+ */
+function exceedsWholeNote(value) {
+  if (value.n <= value.d) {
+    return null;
+  }
+  const wholes = Math.floor(value.n / value.d);
+  const rest = value.n - wholes * value.d;
+  // Skloňování: 1 celek, 2-4 celky, 5+ celků. Hra učí i jazyk, takže
+  // '5 celky' by byla chyba na tom nejviditelnějším místě - v textu pro dítě.
+  const wholeText =
+    wholes === 1 ? 'jeden celek' : `${wholes} ${wholes < 5 ? 'celky' : 'celků'}`;
+  return rest === 0
+    ? `Vyšlo ${formatNumber(value)}, což je přesně ${wholeText}.`
+    : `Vyšlo ${formatNumber(value)} - to je víc než celek: ${wholeText} a k tomu ${rest}/${value.d}.`;
+}
 
 /** Hodnota vstupu hráče jako zlomek, nebo null. */
 function valueToFraction(value) {
@@ -533,16 +553,6 @@ function formatTermsWithBlanks(terms) {
   return text || '0';
 }
 
-function formatXTerm(x) {
-  if (x.n === 1 && x.d === 1) {
-    return 'x';
-  }
-  if (x.n === -1 && x.d === 1) {
-    return '-x';
-  }
-  return x.d === 1 ? `${x.n}x` : `(${formatNumber(x)})x`;
-}
-
 /* ------------------------------------------------------------------ */
 /* Zlomky: sčítání a odčítání                                          */
 /* ------------------------------------------------------------------ */
@@ -585,7 +595,10 @@ function createFractionSession(exercise) {
     return 'combine';
   }
 
-  const labelledBar = (n, d) => ({ n, d, label: `${n}/${d}` });
+  // Popisek pásu přes formatNumber: celý operand se píše '2', ne '2/1'.
+  // Zadání i otázka relace ho tak píšou taky ('Přepiš 2 na jmenovatele 4'),
+  // takže '2/1' by byl jediný nepravdivý údaj na obrazovce.
+  const labelledBar = (n, d) => ({ n, d, label: formatNumber({ n, d }) });
 
   function barFor(i) {
     const source = i === 0 ? a : b;
@@ -750,7 +763,7 @@ function createFractionSession(exercise) {
         if (combined === 0 || gcd(combined, common) === 1) {
           // Nula se nekrátí a základní tvar už máme - hotovo.
           done = true;
-          return { status: 'solved', note: null };
+          return { status: 'solved', note: exceedsWholeNote({ n: combined, d: common }) };
         }
         phase = 'simplify';
         return { status: 'partial', note: null };
@@ -767,7 +780,7 @@ function createFractionSession(exercise) {
       history.push({ operationText: `= ${formatNumber(expected)}`, equationText: '' });
       mistakesOnStep = 0;
       done = true;
-      return { status: 'solved', note: null };
+      return { status: 'solved', note: exceedsWholeNote(expected) };
     },
 
     cancelOperation() {},

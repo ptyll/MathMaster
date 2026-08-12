@@ -729,11 +729,14 @@ p {
   font-size: 1.15rem;
 }
 
-/* Titul hráče vedle jména (mapa) a v přehledu pro rodiče: Padawan -> ...
-   -> Člen rady Jedi. Odlišený rámečkem a zlatou barvou, ne ztlumením -
-   stav se má číst stejně dobře jako jméno (kontrast 12:1 proti panelu). */
+/* Zlatá pilulka: titul hráče vedle jména (mapa), týž titul v přehledu pro
+   rodiče a pobídka 'Přehrát slavnost Rady Jedi'. Jedno pravidlo schválně -
+   dítě se tak učí, že zlatá pilulka se šipkou něco otevře. Odlišené
+   rámečkem a barvou, ne ztlumením: stav se má číst stejně dobře jako
+   jméno (kontrast 12:1 proti panelu). */
 .map-player-title,
-.stats-profile-title {
+.stats-profile-title,
+.council-replay-text {
   font-size: 0.95rem;
   font-weight: 700;
   color: #ffd94d;
@@ -759,13 +762,21 @@ button.map-player-title {
   touch-action: manipulation;
 }
 
-/* Bez šipky vypadá odznak jako pouhý štítek a na tabletu není hover, takže
+/* Bez šipky vypadá pilulka jako pouhý štítek a na tabletu není hover, takže
    dítě nemá jak poznat, že vede dál - a právě 'nikde se nedozví, že
    žebříček existuje' byl důvod téhle funkce. Šipka je čistě vizuální
-   pobídka: text tlačítka i jeho přístupný název (aria-label) drží beze
-   změny, protože aria-label má před obsahem přednost. */
+   pobídka: do textContent nespadne a do přístupného jména taky ne, protože
+   odznak titulu má vlastní aria-label, který výpočet jména z obsahu obejde.
+   POZOR: bez aria-label by se pseudoobsah do jména započítal - proto má
+   tlačítko slavnosti Rady šipku jako aria-hidden prvek v DOM. */
 button.map-player-title::after {
   content: '▸';
+  margin-left: 0.4rem;
+  font-size: 0.9em;
+}
+
+/* Táž šipka u pobídky, která si jméno bere z obsahu - viz komentář výše. */
+.council-replay-arrow {
   margin-left: 0.4rem;
   font-size: 0.9em;
 }
@@ -1084,9 +1095,51 @@ p.title-ladder-next {
 
 /* Nejvyšší titul si zaslouží víc než Mistr Jedi - jinak by dohrání
    jedenácté planety vypadalo stejně jako dohrání páté. */
+/* Pruh Rady nese dvě věci s různou životností: hlášku aktuálního titulu
+   (obyčejný text, aby ji odečítač přečetl) a tlačítko, kterým se pouští
+   slavnost Rady. Vizuálně mají zůstat jedním blokem, proto sloupec. */
 .master-jedi--council {
   font-size: 1.7rem;
   letter-spacing: 0.02em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Slavnost za dohranou hru jde pustit znovu (UCV-MAP-003) - dřív se dala
+   nenávratně proklepnout. Tlačítko musí vypadat jako tlačítko i na tabletu,
+   kde není hover: odznak Rady vlevo, zlatá pilulka s pobídkou vpravo. */
+.council-replay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  min-height: var(--touch-target);
+  padding: 0.25rem 0.5rem;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.council-replay:focus-visible {
+  outline: 3px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+.council-replay:hover .council-replay-text,
+.council-replay:focus-visible .council-replay-text {
+  background: rgba(255, 217, 77, 0.18);
+}
+
+/* Odznak Rady na mapě je zmenšená verze toho ze slavnosti - stejný motiv,
+   takže dítě pozná, co tlačítko otevře. Velikost přebíjí atributy SVG. */
+.council-badge--inline {
+  width: 3rem;
+  height: 3rem;
 }
 
 /* --- Slavnost Rady Jedi (UCV-MAP-003) --- */

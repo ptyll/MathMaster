@@ -13,7 +13,7 @@ const { createInventoryOverlay } = await import('../js/ui/workshopScreen.js');
 const { hasPlanetArt, createPlanetArt } = await import('../js/ui/planetArt.js');
 const { createDefaultState } = await import('../js/engine/state.js');
 const { focusNewScreen } = await import('../js/ui/dialogA11y.js');
-const { createSaveStore } = await import('../js/engine/save.js');
+const { createSaveStore, SAVE_KEY } = await import('../js/engine/save.js');
 const { TITLES, titleFor, completedPlanetCount } = await import('../js/engine/titles.js');
 const { titleLadderSteps, planetWord, planetWordFrom } = await import('../js/ui/titleLadder.js');
 
@@ -865,5 +865,323 @@ test('DOM stub hlásí nepodporovaný selektor výjimkou, ne tichým prázdnem',
       /nepodporovaný selektor/,
       `stub tiše spolkl selektor ${selector}`
     );
+  }
+});
+
+/* --- Slavnost Rady Jedi jde přehrát znovu (UCV-MAP-003) -------------------
+ *
+ * Značka 'viděno' se zapisuje PŘED zobrazením, aby ji nespolkl pád hry ani
+ * zavřená karta. Cenu za to platí dítě, které slavnost proklepne - proto
+ * musí jít pustit znovu z odznaku Rady na mapě.
+ */
+
+/** Save protažený opravdovým store, ne ručně slepený stav. */
+function savedFinishedState(mutate = () => {}) {
+  const raw = stateFinished();
+  mutate(raw);
+  const storage = memoryStorage();
+  storage.setItem(SAVE_KEY, JSON.stringify(raw));
+  const store = createSaveStore(storage);
+  return { store, loaded: store.load() };
+}
+
+/** Vykreslí mapu tak, jak to dělá hra: se zápisem stavu do savu. */
+function renderMapWithSave(state, store) {
+  const container = createContainer();
+  const screen = createMapScreen(container, {
+    state,
+    onStartMission: () => {},
+    onStateChanged: () => store.save(state),
+  });
+  return { container, screen, root: screen.element };
+}
+
+function closeCelebration(root) {
+  const footer = root.querySelector('.council-overlay').querySelector('.overlay-footer');
+  footer.querySelectorAll('button')[0].click();
+}
+
+/**
+ * Přístupné jméno prvku - záměrně úzký model prohlížeče: aria-label vyhrává
+ * nad obsahem a podstrom s aria-hidden se do jména nepočítá. Testovat jméno
+ * přes textContent nestačí: aria-label obsah PŘEBIJE, takže hláška uvnitř
+ * tlačítka může být v textContent, a odečítač ji přesto nikdy nepřečte.
+ *
+ * Co model neumí, na to spadne (stejně jako stráž v domStub.js): u
+ * aria-labelledby, title nebo alt by tiše vrátil JINÉ jméno než prohlížeč a
+ * test by prošel nad vadou. Model taky nevidí CSS, takže o pseudoobsahu
+ * (::before/::after) nemůže tvrdit nic - a ten do jména z obsahu patří.
+ */
+const NEPODPOROVANE_JMENO = ['aria-labelledby', 'title', 'alt'];
+
+/**
+ * Stráž patří na VSTUP do modelu, ne dovnitř jedné z jeho větví: dokud
+ * seděla až ve visibleText, prvek s aria-label se do ní nikdy nedostal
+ * a kombinace aria-label + aria-labelledby prošla tiše - přitom
+ * aria-labelledby má v prohlížeči přednost, takže jméno by bylo jiné.
+ */
+function overTvarJmena(el) {
+  for (const attr of NEPODPOROVANE_JMENO) {
+    if (el.getAttribute(attr) !== null) {
+      throw new Error(
+        `accessibleName: ${attr} tenhle model neumí - dopiš ho, ať se jméno neliší od prohlížeče`
+      );
+    }
+  }
+}
+
+function accessibleName(el) {
+  overTvarJmena(el);
+  const label = el.getAttribute('aria-label');
+  return label === null ? visibleText(el) : label;
+}
+
+function visibleText(el) {
+  if (el.getAttribute('aria-hidden') === 'true' || el.hidden) {
+    return '';
+  }
+  overTvarJmena(el);
+  // Potomek s aria-label přispívá do jména z obsahu TÍM LABELEM, ne svým
+  // textem - rekurze tedy pokračuje jen do potomků bez labelu. (V js/ má
+  // aria-label 45 výskytů včetně vnořených prvků, takže to není teorie.)
+  const label = el.getAttribute('aria-label');
+  if (label !== null) {
+    return label;
+  }
+  // Vlastní text A potomci: pilulka nese popisek i vnořenou skrytou šipku,
+  // takže brát jen jedno z toho by jméno tiše osekalo.
+  return el.ownText + el.childNodes.map(visibleText).join('');
+}
+
+test('TDD-MAP-003-U: slavnost jde přehrát znovu z odznaku Rady na mapě', () => {
+  // Hráč slavnost už viděl (nebo ji proklepl) - sama se nespustí.
+  const state = stateFinished();
+  state.awards = { councilCelebrated: true };
+  const { root } = renderMap(state);
+  assert.equal(root.querySelector('.council-overlay'), null, 'slavnost se spustila sama podruhé');
+
+  // Oslavná hláška je obyčejný text MIMO tlačítko - jinak by ji odečítač
+  // přebil jménem tlačítka a vyvrcholení hry by nevidomému uteklo.
+  const strip = root.querySelector('.master-jedi--council');
+  const text = root.querySelector('.master-jedi-text');
+  assert.ok(text.textContent.includes('ČLEN RADY JEDI'), 'pruh přišel o oslavnou hlášku');
+  assert.equal(text.closest('button'), null, 'hláška je uvnitř tlačítka - čtečka ji přebije jménem');
+  assert.equal(text.getAttribute('aria-label'), null, 'hlášku přebíjí vlastní aria-label');
+  assert.ok(visibleText(strip).includes('ČLEN RADY JEDI'), 'hláška není v přečteném textu pruhu');
+
+  const badge = root.querySelector('.council-replay');
+  assert.equal(badge.tagName, 'BUTTON', 'odznak Rady nejde stisknout');
+  assert.equal(badge.getAttribute('aria-haspopup'), 'dialog');
+  assert.ok(badge.querySelector('.council-badge'), 'odznaku chybí motiv Rady');
+  // Jméno tlačítka mluví o té slavnosti, kterou opravdu otevře.
+  const jmeno = accessibleName(badge);
+  assert.equal(jmeno, 'Přehrát slavnost Rady Jedi', `jméno tlačítka je ${JSON.stringify(jmeno)}`);
+  assert.ok(badge.textContent.includes('Přehrát slavnost'), 'na tlačítku není vidět pobídka');
+
+  // Šipka je vidět, ale do jména nepatří. Tlačítko nemá aria-label, takže
+  // jméno vzniká z obsahu - a z toho výpočtu ji drží venku jedině
+  // aria-hidden. (V ::after by se do jména započítala.)
+  const sipka = badge.querySelector('.council-replay-arrow');
+  assert.ok(sipka, 'pobídka nemá vizuální šipku');
+  assert.equal(sipka.getAttribute('aria-hidden'), 'true', 'šipku dostane i odečítač');
+  assert.ok(badge.textContent.includes('▸'), 'šipka není vidět');
+  assert.equal(jmeno.includes('▸'), false, 'šipka spadla do přístupného jména');
+
+  badge.click();
+  const overlay = root.querySelector('.council-overlay');
+  assert.ok(overlay, 'odznak slavnost nepustil');
+  assert.ok(overlay.querySelector('.council-badge'), 've slavnosti chybí velký odznak');
+  assert.ok(overlay.textContent.includes('Ahsoka'), 'slavnost neoslovuje hráče jménem');
+  assert.ok(overlay.contains(document.activeElement), 'fokus zůstal mimo slavnost');
+
+  closeCelebration(root);
+  assert.equal(root.querySelector('.council-overlay'), null, 'slavnost nejde zavřít');
+  assert.equal(document.activeElement, badge, 'fokus se nevrátil na odznak Rady');
+
+  // A znovu, kolikrát bude chtít - to je celý smysl.
+  badge.click();
+  assert.ok(root.querySelector('.council-overlay'), 'podruhé se slavnost nepustila');
+  closeCelebration(root);
+
+  // Nad mapou stojí vždy jen jeden modál - a to v obou směrech.
+  badge.click();
+  root.querySelector('.map-player-title').click();
+  assert.equal(root.querySelector('.council-overlay'), null, 'slavnost zůstala viset pod žebříčkem');
+  assert.ok(root.querySelector('.title-ladder-overlay'), 'žebříček se neotevřel');
+  root.querySelector('.title-ladder-overlay').querySelector('.overlay-footer').querySelectorAll('button')[0].click();
+
+  // Nižší milníky slavnost nemají, jejich pruh tedy nesmí lákat na klik.
+  const mistr = renderMap(stateWithCompleted(CORE_PLANETS.map((p) => p.id))).root;
+  assert.equal(mistr.querySelector('.master-jedi').tagName, 'DIV', 'pruh bez slavnosti je tlačítko');
+  assert.equal(mistr.querySelector('.council-replay'), null, 'kdo není v Radě, dostal vstup do slavnosti');
+});
+
+test('TDD-MAP-003-V: automaticky se slavnost pouští jen jednou - i když ji hráč nezavře', () => {
+  const { store, loaded } = savedFinishedState();
+  assert.equal(loaded.awards.councilCelebrated, false, 'předpoklad testu: slavnost ještě neproběhla');
+
+  const první = renderMapWithSave(loaded, store);
+  assert.ok(první.root.querySelector('.council-overlay'), 'po dohrání nepřišla slavnost');
+
+  // Dítě ji NEZAVŘE - zavře rovnou kartu prohlížeče (nebo hra spadne).
+  // Značka proto musí být uložená už teď, ne až při zavření dialogu.
+  const poRestartu = store.load();
+  assert.ok(poRestartu, 'stav se neuložil');
+  assert.equal(
+    renderMap(poRestartu).root.querySelector('.council-overlay'),
+    null,
+    'slavnost se po restartu spustila sama znovu'
+  );
+
+  // Ruční přehrání značku nemění - automatika zůstává vypnutá.
+  const opakovaně = renderMap(poRestartu);
+  opakovaně.root.querySelector('.council-replay').click();
+  assert.ok(opakovaně.root.querySelector('.council-overlay'), 'odznak slavnost nepustil');
+  closeCelebration(opakovaně.root);
+  assert.equal(
+    renderMap(store.load()).root.querySelector('.council-overlay'),
+    null,
+    'po ručním přehrání se slavnost spouští zase sama'
+  );
+});
+
+test('TDD-MAP-003-W: starý save bez klíče awards se načte bez migrace a slavnost dostane', () => {
+  const { store, loaded } = savedFinishedState((raw) => {
+    delete raw.awards; // save z verze před slavností Rady
+  });
+  assert.ok(loaded, 'starý save se zahodil - hráč by přišel o celý postup');
+  assert.equal(loaded.awards, undefined, 'starý save se kvůli slavnosti migruje, i když nemusí');
+
+  const první = renderMapWithSave(loaded, store);
+  assert.ok(první.root.querySelector('.council-overlay'), 'hráč ze starého savu slavnost nedostal');
+  assert.equal(loaded.awards?.councilCelebrated, true, 'značka se do starého savu nezapsala');
+  assert.equal(
+    renderMap(store.load()).root.querySelector('.council-overlay'),
+    null,
+    'starý save dostává slavnost při každém spuštění'
+  );
+});
+
+test('TDD-MAP-003-X: poškozený awards (číslo, řetězec, null, pole) nesmí shodit start hry', () => {
+  for (const rozbite of [5, 'ano', null, ['councilCelebrated']]) {
+    const popis = `awards=${JSON.stringify(rozbite)}`;
+    const { store, loaded } = savedFinishedState((raw) => {
+      raw.awards = rozbite;
+    });
+    assert.ok(loaded, `${popis}: save se zahodil, hráč přišel o postup`);
+
+    // Vykreslení mapy je kritická cesta startu - tady nesmí padnout TypeError.
+    const první = renderMapWithSave(loaded, store);
+    assert.ok(první.root.querySelector('.council-overlay'), `${popis}: slavnost nepřišla`);
+    assert.ok(
+      loaded.awards && typeof loaded.awards === 'object' && !Array.isArray(loaded.awards),
+      `${popis}: značka se zapsala do poškozené hodnoty místo aby ji opravila`
+    );
+    assert.equal(loaded.awards.councilCelebrated, true, `${popis}: značka se nezapsala`);
+    assert.equal(
+      renderMap(store.load()).root.querySelector('.council-overlay'),
+      null,
+      `${popis}: slavnost se spustila znovu`
+    );
+  }
+});
+
+test('odznak Rady na mapě je čitelný, s dotykovým cílem a bez ztlumení', () => {
+  const rules = parseCss(cssText);
+  const pozadi = cssColor('--color-bg'); // pruh leží na pozadí stránky, ne na panelu
+  const solid = (value) => (value?.startsWith('var(') ? cssColor(value.slice(4, -1)) : value);
+
+  for (const selector of ['.master-jedi', '.council-replay-text']) {
+    const color = solid(resolveValue(rules, selector, 'color'));
+    assert.ok(color, `${selector}: nemá vlastní barvu textu`);
+    assert.ok(
+      contrast(color, pozadi) >= 4.5,
+      `${selector}: text ${color} má proti pozadí jen ${contrast(color, pozadi).toFixed(2)}:1`
+    );
+    assert.equal(resolveValue(rules, selector, 'opacity'), null, `${selector}: text se ztlumuje průhledností`);
+  }
+
+  // Dotykový cíl nese samo tlačítko - celý pruh ho už nepoveze, protože
+  // hláška vedle něj je jen text.
+  const target = Number(/--touch-target:\s*(\d+)px/.exec(cssText)[1]);
+  const value = resolveValue(rules, '.council-replay', 'min-height');
+  const px = /^(\d+)px$/.exec(value ?? '');
+  const resolved = px ? Number(px[1]) : value === 'var(--touch-target)' ? target : NaN;
+  assert.ok(resolved >= 56, `odznak Rady má dotykový cíl '${value}', což není aspoň 56 px`);
+
+  // Odznak a pobídka jsou sousední prvky bez mezery v DOM; hláška a tlačítko
+  // v pruhu taky - bez vlastního rozložení by se text slil.
+  assert.equal(resolveValue(rules, '.council-replay', 'display'), 'flex');
+  assert.ok(resolveValue(rules, '.council-replay', 'gap'), 'odznak Rady nemá mezery mezi částmi');
+  assert.equal(resolveValue(rules, '.master-jedi--council', 'display'), 'flex');
+  assert.ok(resolveValue(rules, '.master-jedi--council', 'gap'), 'pruh Rady nemá mezeru mezi hláškou a tlačítkem');
+
+  // Šipka pobídky je prvek v DOM (viz TDD-MAP-003-U), ne pseudoobsah -
+  // v CSS má jen odsazení, aby se nelepila na text.
+  assert.ok(resolveValue(rules, '.council-replay-arrow', 'margin-left'), 'šipka se lepí na text pobídky');
+  assert.equal(
+    resolveValue(rules, '.council-replay-text::after', 'content'),
+    null,
+    'šipka je zpátky v pseudoobsahu - spadne do přístupného jména tlačítka'
+  );
+  // Zmenšený odznak na mapě nesmí zůstat na 140 px ze SVG atributů.
+  assert.ok(resolveValue(rules, '.council-badge--inline', 'width'), 'odznak na mapě nemá vlastní velikost');
+});
+
+test('TDD-MAP-003-Z: vstup do slavnosti drží i budoucím stupňům nad Radou a nevydává se za ně', () => {
+  // Vstup do slavnosti visel na hlášce AKTUÁLNÍHO titulu a na tom, že
+  // nejvyšší titul je zrovna Rada. Stupeň nad Radou BEZ hlášky tedy vstup
+  // odstranil (a automatika už proběhla, takže nenávratně), stupeň S hláškou
+  // z tlačítka udělal lháře: text nového titulu, odznak a jméno Rady.
+  const nove = [
+    { popis: 'bez hlášky', title: { id: 'zk-bez', label: 'Velmistr', minPlanets: PLANETS.length } },
+    {
+      popis: 's hláškou',
+      title: {
+        id: 'zk-s',
+        label: 'Velmistr',
+        minPlanets: PLANETS.length,
+        banner: '🏆 VELMISTR! Nad Radou už je jen legenda. 🏆',
+      },
+    },
+  ];
+  for (const { popis, title } of nove) {
+    TITLES.push(title);
+    try {
+      const state = stateFinished();
+      state.awards = { councilCelebrated: true };
+      const { root } = renderMap(state);
+      assert.equal(titleFor(state).label, 'Velmistr', `${popis}: předpoklad testu neplatí`);
+
+      const btn = root.querySelector('.council-replay');
+      assert.ok(btn, `${popis}: člen Rady přišel o vstup do slavnosti`);
+      assert.equal(btn.tagName, 'BUTTON', `${popis}: vstup do slavnosti nejde stisknout`);
+
+      // Tlačítko mluví o té slavnosti, kterou opravdu otevře - ne o titulu,
+      // který má hráč zrovna na odznaku.
+      const jmeno = accessibleName(btn);
+      assert.ok(/Rady Jedi/.test(jmeno), `${popis}: jméno tlačítka je ${JSON.stringify(jmeno)}`);
+      assert.equal(jmeno.includes('Velmistr'), false, `${popis}: tlačítko se vydává za jiný titul`);
+
+      btn.click();
+      const overlay = root.querySelector('.council-overlay');
+      assert.ok(overlay, `${popis}: slavnost se nepustila`);
+      assert.equal(
+        overlay.getAttribute('aria-label'),
+        'Člen rady Jedi',
+        `${popis}: otevřel se jiný dialog, než o kterém tlačítko mluví`
+      );
+
+      // Hláška pruhu naopak patří AKTUÁLNÍMU titulu - a stojí mimo tlačítko.
+      const text = root.querySelector('.master-jedi-text');
+      if (title.banner) {
+        assert.ok(text.textContent.includes('VELMISTR'), `${popis}: pruh neukazuje hlášku titulu`);
+        assert.equal(text.closest('button'), null, `${popis}: hláška spadla dovnitř tlačítka`);
+      } else {
+        assert.equal(text, null, `${popis}: pruh ukazuje hlášku, kterou titul nemá`);
+      }
+    } finally {
+      TITLES.pop();
+    }
   }
 });

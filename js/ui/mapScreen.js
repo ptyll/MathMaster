@@ -22,7 +22,7 @@ import {
 } from '../engine/titles.js';
 import { createPlanetArt, createStarfield } from './planetArt.js';
 import { createInventoryOverlay, createWorkshopOverlay } from './workshopScreen.js';
-import { createCouncilCelebration, createConfetti } from './councilScreen.js';
+import { createCouncilCelebration, createConfetti, createCouncilBadge } from './councilScreen.js';
 import { createTitleLadderOverlay } from './titleLadder.js';
 import { createParentGate } from './parentGate.js';
 
@@ -95,14 +95,33 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
 
   // Overlaye inventáře a dílny
   let overlay = null;
+  // Slavnost Rady (níž) je taky modál a closeModals ji zavírá - proto se
+  // deklaruje TADY, ne až u svého bloku. S deklarací níž by kdokoli, kdo
+  // mezi to dopíše volání closeModals(), dostal ReferenceError (TDZ) až za
+  // běhu, tedy uprostřed vykreslování mapy.
+  let celebration = null;
   const closeOverlay = () => {
     if (overlay) {
       overlay.destroy();
       overlay = null;
     }
   };
-  crystalsBtn.addEventListener('click', () => {
+  /**
+   * Nad mapou smí stát jen jeden modál. Zavírají se obousměrně: dokud
+   * slavnost rušil jen žebříček a ne naopak, mohly by nad sebou stát dva
+   * dialogy (v prohlížeči nedosažitelné, ale asymetrie se dřív nebo
+   * později někam propíše).
+   */
+  const closeModals = () => {
     closeOverlay();
+    if (celebration) {
+      const open = celebration;
+      celebration = null;
+      open.destroy();
+    }
+  };
+  crystalsBtn.addEventListener('click', () => {
+    closeModals();
     overlay = createInventoryOverlay(root, {
       state,
       onClose: () => {
@@ -112,7 +131,7 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
     });
   });
   rank.addEventListener('click', () => {
-    closeOverlay();
+    closeModals();
     overlay = createTitleLadderOverlay(root, {
       state,
       onClose: () => {
@@ -122,7 +141,7 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
     });
   });
   workshopBtn.addEventListener('click', () => {
-    closeOverlay();
+    closeModals();
     overlay = createWorkshopOverlay(root, {
       state,
       onCrafted: () => {
@@ -143,14 +162,85 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
   // jen milníky (ty mají v TITLES vyplněný banner), aby oslava nezevšedněla.
   // Mistr Jedi se dál počítá jen z původní pětky (UCV-MAP-002): endgame řetěz
   // visí za ní, takže hráč, který kdysi dobyl Coruscant, o titul nepřijde.
+  //
+  // V pruhu stojí vedle sebe DVĚ věci s různou životností, proto dva prvky:
+  //  - hláška patří AKTUÁLNÍMU titulu, tedy obsah řídí data (banner v TITLES),
+  //  - tlačítko otevírá slavnost RADY, tedy identita je pevná.
+  // Dokud to byl jeden prvek, stačil budoucí stupeň bez hlášky, aby vstup do
+  // slavnosti zmizel úplně (a automatika už proběhla, takže nenávratně), a
+  // stupeň s hláškou, aby se tlačítko vydávalo za titul, který neotevírá.
+  // Vizuálně zůstávají jedním blokem, hráč rozdíl nepozná.
   const councilMember = isJediCouncil(state);
-  const rankBanner = councilMember || isMasterJedi(state, CORE_PLANETS) ? currentTitle.banner : null;
-  if (rankBanner) {
-    const master = document.createElement('div');
-    master.className = 'master-jedi' + (councilMember ? ' master-jedi--council' : '');
-    master.textContent = rankBanner;
-    root.appendChild(master);
-    root.appendChild(createConfetti());
+  const milestoneBanner =
+    councilMember || isMasterJedi(state, CORE_PLANETS) ? currentTitle.banner : null;
+  if (milestoneBanner || councilMember) {
+    const bannerStrip = document.createElement('div');
+    bannerStrip.className = 'master-jedi' + (councilMember ? ' master-jedi--council' : '');
+    if (milestoneBanner) {
+      // Obyčejný text v divu, ne obsah tlačítka: odečítač by ho jinak
+      // přebil jménem tlačítka a vyvrcholení hry by nevidomému uteklo.
+      const text = document.createElement('span');
+      text.className = 'master-jedi-text';
+      text.textContent = milestoneBanner;
+      bannerStrip.appendChild(text);
+    }
+    if (councilMember) {
+      bannerStrip.appendChild(createCouncilReplayButton());
+    }
+    root.append(bannerStrip, createConfetti());
+  }
+
+  /**
+   * Tlačítko, kterým jde slavnost Rady Jedi pustit znovu (UCV-MAP-003) -
+   * dřív se dala nenávratně proklepnout. Jméno i motiv odznaku patří RADĚ,
+   * protože otevírá dialog Rady; s aktuálním titulem hráče nemají co
+   * společného. Jméno vzniká z viditelného textu (žádný aria-label), takže
+   * se nemůže rozejít s tím, co je vidět; šipka je skrytý prvek v DOM, ne
+   * v ::after - viz komentář u ní.
+   */
+  function createCouncilReplayButton() {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'council-replay';
+    const badge = createCouncilBadge();
+    badge.classList.add('council-badge--inline');
+    // Popisek nese text vedle odznaku, jinak by ho odznak ve jméně zdvojil.
+    badge.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.className = 'council-replay-text';
+    label.textContent = 'Přehrát slavnost Rady Jedi';
+    // Šipka je pobídka pro oko, ne pro odečítač - a proto je v DOM a
+    // aria-hidden, ne v ::after. Tlačítko nemá aria-label, takže jeho jméno
+    // vzniká Z OBSAHU, a do toho výpočtu pseudoobsah v prohlížeči PATŘÍ:
+    // přes ::after by jméno končilo '▸' ('trojúhelník doprava'). Skrytý
+    // podstrom se naopak do jména nepočítá. (U odznaku titulu je ::after
+    // v pořádku jen díky jeho explicitnímu aria-label - není to obecné
+    // pravidlo.)
+    const arrow = document.createElement('span');
+    arrow.className = 'council-replay-arrow';
+    arrow.setAttribute('aria-hidden', 'true');
+    arrow.textContent = '▸';
+    label.append(arrow);
+    btn.append(badge, label);
+    btn.setAttribute('aria-haspopup', 'dialog');
+    btn.addEventListener('click', () => openCelebration(() => btn.focus()));
+    return btn;
+  }
+
+  /**
+   * Otevře slavnost Rady Jedi. Jedna cesta pro první (automatické) i pro
+   * opakované spuštění z odznaku - liší se jen tím, kdo ji zavolá a kam se
+   * po zavření vrací fokus.
+   */
+  function openCelebration(returnFocus) {
+    closeModals(); // dva modály nad sebou ne
+    celebration = createCouncilCelebration(root, {
+      name: state.profile?.name ?? 'Padawan',
+      onClose: () => {
+        celebration = null;
+        returnFocus();
+      },
+    });
   }
 
   // --- Pás planet ---
@@ -325,9 +415,12 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
   // --- Slavnost za přijetí do Rady Jedi (UCV-MAP-003) ---
   // Otevírá se až tady, tedy s mapou zavěšenou v dokumentu: dialog si při
   // otevření bere fokus a focus() na odpojeném uzlu je no-op.
-  // Značku 'viděno' zapisujeme PŘED zobrazením a hned ukládáme, aby se
-  // konfety nespouštěly při každém návratu na mapu.
-  let celebration = null;
+  //
+  // Značka 'viděno' se zapisuje PŘED zobrazením a hned ukládá - jinak by
+  // zavření karty nebo pád hry uprostřed slavnosti způsobily, že se konfety
+  // spustí znovu při každém návratu na mapu. Že o vyvrcholení hry nikdo
+  // nepřijde, řeší odznak Rady výše: slavnost jde pustit kdykoli znovu.
+  // Automaticky se ale pořád spouští jen jednou.
   if (isJediCouncil(state) && !hasSeenCouncilCelebration(state)) {
     markCouncilCelebrationSeen(state);
     onStateChanged?.();
@@ -335,20 +428,13 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
     // fokus spadl na <body> a hráč u klávesnice by tabovat začal od začátku
     // stránky. (Mimo slavnost mu tabindex nastavuje main.js.)
     h1.tabIndex = -1;
-    celebration = createCouncilCelebration(root, {
-      name: state.profile?.name ?? 'Padawan',
-      onClose: () => {
-        celebration = null;
-        h1.focus();
-      },
-    });
+    openCelebration(() => h1.focus());
   }
 
   return {
     element: root,
     destroy() {
-      closeOverlay();
-      celebration?.destroy();
+      closeModals();
       parentGate?.destroy();
       root.remove();
     },

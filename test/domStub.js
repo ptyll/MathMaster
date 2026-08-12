@@ -85,6 +85,16 @@ class StubElement {
     return this._text + this.childNodes.map((c) => c.textContent).join('');
   }
 
+  /**
+   * Vlastní text prvku BEZ potomků. Stub nemodeluje textové uzly, takže
+   * jinak se k němu nedá dostat - a prvek může mít obojí naráz (pilulka
+   * s popiskem a vnořenou šipkou). Kdo skládá text po částech (výpočet
+   * přístupného jména), musí vlastní text a potomky poskládat sám.
+   */
+  get ownText() {
+    return this._text;
+  }
+
   set textContent(value) {
     this._text = String(value);
     this.childNodes.forEach((c) => {

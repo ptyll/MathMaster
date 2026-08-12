@@ -15,12 +15,39 @@ import { nextDifficulty, shouldOfferHint } from '../content/adaptive.js';
  *
  * TICHÁ VAZBA: druh se cyklí TÝMŽ indexem jako téma (viz spawn níž), takže na
  * víctematické planetě padnou jen druhy ze zbytkové třídy toho tématu a zbytek
- * je tam NEDOSAŽITELNÝ NAVŽDY - Kamino vidí jen add/simplify/compare, Mustafar
- * a Coruscant subtract/compare, Bespin subtract/equivalent/expand, jednotematický
- * Dagobah všech šest. Kdo změní exerciseCount nebo počet témat planety, mění tím
- * MNOŽINU druhů, které tam dítě kdy uvidí. `expand` (index 5) navíc padne jen v
- * prodlouženém boss souboji, protože boss nemá exerciseCount a index roste jen
- * za správné odpovědi - potká ho tedy dítě, kterému se zrovna nedaří.
+ * je tam NEDOSAŽITELNÝ NAVŽDY. Naměřeno simulací skutečné mise (bezchybná hra):
+ * Mustafar 1-3 jen subtract, Bespin 1-3 subtract+equivalent, Kamino 1-3
+ * add+simplify, Coruscant subtract+equivalent resp. subtract+compare,
+ * jednotematický Dagobah pět ze šesti. Kdo změní exerciseCount nebo počet témat
+ * planety, mění tím MNOŽINU druhů, které tam dítě kdy uvidí - proti tomu drží
+ * tabulka v testu „UCN-CLEAN-001: množiny zlomkových druhů na misích drží".
+ *
+ * `expand` (index 5) je v CELÉ HŘE mimo dosah dítěte, které nechybuje, a je to
+ * STRUKTURÁLNÍ, ne důsledek zbytkových tříd: žádná mise nemá exerciseCount větší
+ * než 5 (max ze 42 misí) a boss končí po pěti správných odpovědích, takže index
+ * 5 nepadne NIKDE. Potká ho jen dítě, kterému se v boss souboji nedaří - boss
+ * nemá exerciseCount a index roste jen za správné odpovědi, takže souboj se po
+ * chybách protahuje. Bezchybná hra ukáže pět ze šesti druhů.
+ * POZOR na zdánlivě levnou opravu: přeskládat pořadí v tomhle poli problém jen
+ * PŘESUNE na ten druh, který skončí na indexu 5. Dosažitelnost drží délka misí,
+ * ne pořadí druhů.
+ *
+ * ROZHODNUTÍ UCN-CLEAN-001: NECHÁVÁME to tak. Změřeny byly DVĚ varianty opravy,
+ * obě na sondě mimo strom:
+ *  - vlastní počítadlo pro fractions (od nuly v každé misi): přerovná 15 z 19
+ *    misí, a nekoupí NIC - pestrost se zvedne na 0 planetách, na Coruscantu
+ *    KLESNE ze 3 druhů na 2. Uvnitř jedné mise je totiž vázaným zdrojem POČET
+ *    zlomkových příkladů (Mustafar 1, ostatní víctematické 2), ne způsob indexace.
+ *  - počítadlo + posun podle mise: tohle by fungovalo - 4 planety pestřejší,
+ *    žádná horší, a bezchybné dítě by poprvé vidělo všech šest druhů (dnes pět).
+ *    Cena je 16 z 19 misí s jinou množinou druhů, tedy rozejité seedy.
+ * Nebrání tomu ta cena, ale to, že u druhé varianty rozhoduje o tom, KTERÝ druh
+ * dítě na které misi potká, hash id mise - `expand` by padl na Coruscant 1
+ * (obtížnost 2) a `equivalent` na Mustafar 3. To je rozhodnutí o skladbě učiva,
+ * ne o indexaci, a patří tomu, kdo navrhuje matematickou posloupnost. Dnešní
+ * přiřazení je stejně nahodilé (zbytková třída), ale je odzkoušené a popsané.
+ * Čistá oprava proto vede přes skladbu misí - výslovný seznam druhů u mise nebo
+ * víc zlomkových příkladů - ne přes tenhle výraz.
  */
 const FRACTION_KINDS = ['add', 'subtract', 'simplify', 'equivalent', 'compare', 'expand'];
 
@@ -97,7 +124,11 @@ export function createMission(config) {
   let current = null;
 
   function spawn() {
-    // Mixované mise (Coruscant) cyklí témata podle indexu příkladu.
+    // Mixované mise (Coruscant) cyklí témata podle indexu příkladu. TÝŽ `index`
+    // jde i do generateForTopic jako pořadí druhu zlomkové úlohy - to je ta tichá
+    // vazba popsaná u FRACTION_KINDS výš (rozhodnutí UCN-CLEAN-001: ponecháno).
+    // POZOR: tyhle dva řádky jsou v souboru DVAKRÁT, druhá kopie je ve
+    // createBossMission. Kdo sáhne jen na jednu, rozejde běžnou misi s bossem TIŠE.
     const topic = config.topics ? config.topics[index % config.topics.length] : config.topic;
     current = generateForTopic(topic, config.seed + index * 101, currentDifficulty, index);
     attemptsOnCurrent = 0;
@@ -290,6 +321,12 @@ export function createBossMission(config) {
   let current = null;
 
   function spawn() {
+    // DRUHÁ KOPIE pravidla z createMission, znak po znaku tatáž: `index` cyklí
+    // téma A ZÁROVEŇ druh zlomkové úlohy (tichá vazba popsaná u FRACTION_KINDS,
+    // rozhodnutí UCN-CLEAN-001: ponecháno). Boss navíc nemá exerciseCount a index
+    // roste jen za správné odpovědi, takže souboj se po chybách protahuje - proto
+    // je `expand` (index 5) dostupný jen tady, a jen dítěti, kterému se nedaří.
+    // Kdo mění tohle, musí změnit i createMission, jinak se obojí rozejde TIŠE.
     const topic = config.topics ? config.topics[index % config.topics.length] : config.topic;
     current = generateForTopic(topic, config.seed + index * 101, currentDifficulty, index);
     attemptsOnCurrent = 0;

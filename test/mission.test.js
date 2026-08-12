@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createMission, generateForTopic } from '../js/engine/mission.js';
+import { createMission, createBossMission, generateForTopic } from '../js/engine/mission.js';
 import { applyMissionResult } from '../js/engine/progress.js';
 import { createDefaultState } from '../js/engine/state.js';
+import { PLANETS } from '../js/content/planets.js';
 
 function testMission(overrides = {}) {
   return createMission({
@@ -244,4 +245,123 @@ test('applyMissionResult plní i per-topic statistiky', () => {
   assert.equal(state.stats.perTopic.equations.solved, 5);
   assert.equal(state.stats.perTopic.equations.attempts, 7);
   assert.equal(state.stats.perTopic.fractions.solved, 0);
+});
+
+/* --- UCN-CLEAN-001: co dítě ze zlomkových druhů reálně uvidí ---------------- */
+
+/**
+ * Druh zlomkové úlohy se cyklí TÝMŽ indexem jako téma mise, takže na víctematické
+ * planetě padnou jen druhy ze zbytkové třídy. Rozhodnutí fáze UCN-CLEAN-001 znělo
+ * NECHAT to tak (měření je v komentáři u FRACTION_KINDS v js/engine/mission.js),
+ * a proto tady stojí tahle tabulka: drží dnešní stav, aby změna `exerciseCount`
+ * nebo počtu témat nezměnila TIŠE množinu druhů, které dítě na planetě kdy uvidí.
+ *
+ * Hodnoty jsou NAMĚŘENÉ simulací skutečné mise, ne dopočítané ze vzorce - dopočet
+ * by kontroloval tentýž výraz, který má hlídat, a spadl by teprve tehdy, až by se
+ * rozešly dvě kopie téhož omylu. U bossů je to hra bez jediné chyby; delší souboj
+ * ukáže víc (viz test o `expand` níž).
+ */
+const ZLOMKOVE_DRUHY_BEZ_CHYBY = {
+  'dagobah-1': ['add', 'compare', 'equivalent', 'simplify', 'subtract'],
+  'dagobah-2': ['add', 'compare', 'equivalent', 'simplify', 'subtract'],
+  'dagobah-3': ['add', 'compare', 'equivalent', 'simplify', 'subtract'],
+  'dagobah-boss': ['add', 'compare', 'equivalent', 'simplify', 'subtract'],
+  'coruscant-1': ['equivalent', 'subtract'],
+  'coruscant-2': ['compare', 'subtract'],
+  'coruscant-boss': ['compare', 'subtract'],
+  'bespin-1': ['equivalent', 'subtract'],
+  'bespin-2': ['equivalent', 'subtract'],
+  'bespin-3': ['equivalent', 'subtract'],
+  'bespin-boss': ['equivalent', 'subtract'],
+  'kamino-1': ['add', 'simplify'],
+  'kamino-2': ['add', 'simplify'],
+  'kamino-3': ['add', 'simplify'],
+  'kamino-boss': ['add', 'compare', 'simplify'],
+  'mustafar-1': ['subtract'],
+  'mustafar-2': ['subtract'],
+  'mustafar-3': ['subtract'],
+  'mustafar-boss': ['compare', 'subtract'],
+};
+
+/** Mise, ve kterých se vůbec zlomky vyskytují - jednotematické i mixované. */
+function miseSeZlomky() {
+  return PLANETS.flatMap((planet) =>
+    planet.missions
+      .filter((m) => (m.topics ? m.topics.includes('fractions') : m.topic === 'fractions'))
+      .map((m) => ({ ...m, planetId: planet.id }))
+  );
+}
+
+/** Odehraje misi na samé správné odpovědi a vrátí druhy zlomkových úloh, které padly. */
+function druhyBezChyby(mission, seed = 4711) {
+  const config = { ...mission, crystalColor: 'modrý', seed };
+  const m = mission.boss ? createBossMission(config) : createMission(config);
+  const druhy = new Set();
+  let pojistka = 0;
+  while (!m.isDone && pojistka++ < 200) {
+    const ex = m.currentExercise;
+    if (ex.topic === 'fractions') {
+      druhy.add(ex.kind);
+    }
+    m.recordAnswer('correct');
+  }
+  return [...druhy].sort();
+}
+
+test('UCN-CLEAN-001: množiny zlomkových druhů na misích drží (změna exerciseCount nebo témat je změní)', () => {
+  const mise = miseSeZlomky();
+
+  // Kdyby filtr nic nenašel, prošla by smyčka níž naprázdno a test by zeleně kryl
+  // hru úplně bez zlomků. Počet je proto součástí tvrzení.
+  assert.equal(
+    mise.length,
+    Object.keys(ZLOMKOVE_DRUHY_BEZ_CHYBY).length,
+    'změnil se počet misí se zlomky - doplň nebo odeber řádek v ZLOMKOVE_DRUHY_BEZ_CHYBY'
+  );
+
+  for (const mission of mise) {
+    const ocekavane = ZLOMKOVE_DRUHY_BEZ_CHYBY[mission.id];
+    assert.ok(ocekavane, `${mission.id}: nová mise se zlomky, doplň ji do tabulky`);
+    const druhy = druhyBezChyby(mission);
+    assert.ok(druhy.length > 0, `${mission.id}: nepadl ani jeden zlomkový příklad`);
+    assert.deepEqual(
+      druhy,
+      ocekavane,
+      `${mission.id}: změnila se MNOŽINA zlomkových druhů, které tam dítě uvidí`
+    );
+  }
+});
+
+test("UCN-CLEAN-001: 'expand' potká jen dítě, kterému se v boss souboji nedaří", () => {
+  const bezChyby = new Set(miseSeZlomky().flatMap((m) => druhyBezChyby(m)));
+  assert.equal(
+    bezChyby.has('expand'),
+    false,
+    "dítě, které dohraje hru bez chyby, dnes 'expand' nepotká - jestli už ano, přepiš komentář u FRACTION_KINDS"
+  );
+  assert.equal(bezChyby.size, 5, 'bezchybná hra dnes ukáže právě pět ze šesti druhů');
+
+  // Boss: index roste jen za správné odpovědi a po třech chybách se boss uzdraví,
+  // takže souboj se protáhne a dítě se dostane až na index 5 = 'expand'.
+  const boss = createBossMission({
+    ...miseSeZlomky().find((m) => m.id === 'dagobah-boss'),
+    crystalColor: 'zelený',
+    seed: 4711,
+  });
+  const druhy = new Set();
+  let spravne = 0;
+  let pojistka = 0;
+  while (!boss.isDone && pojistka++ < 200) {
+    druhy.add(boss.currentExercise.kind);
+    if (spravne === 3) {
+      boss.recordAnswer('wrong');
+      boss.recordAnswer('wrong');
+      boss.recordAnswer('wrong');
+      spravne = 0;
+      continue;
+    }
+    boss.recordAnswer('correct');
+    spravne++;
+  }
+  assert.ok(druhy.has('expand'), "prodloužený boss souboj musí dojít až na 'expand'");
 });

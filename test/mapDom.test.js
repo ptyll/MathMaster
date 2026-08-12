@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { installDom, createContainer } from './domStub.js';
+import { parseCss, resolveValue, resolveAnimation } from './cssCascade.js';
 
 installDom(); // musí být dřív než import obrazovek - ty sahají na document až za běhu
 
@@ -11,6 +12,8 @@ const { createMapScreen } = await import('../js/ui/mapScreen.js');
 const { createInventoryOverlay } = await import('../js/ui/workshopScreen.js');
 const { hasPlanetArt, createPlanetArt } = await import('../js/ui/planetArt.js');
 const { createDefaultState } = await import('../js/engine/state.js');
+const { focusNewScreen } = await import('../js/ui/dialogA11y.js');
+const { createSaveStore } = await import('../js/engine/save.js');
 
 /** Stav hráče, který má dokončené (boss mise) uvedené planety. */
 function stateWithCompleted(planetIds) {
@@ -342,4 +345,214 @@ test('každá planeta má vlastní ilustraci a barvu krystalu v CSS', () => {
       `${planet.id}: chybí styl .crystal-${planet.crystalColor}`
     );
   }
+});
+
+/* --- Titul hráče a slavnost Rady Jedi (UCV-MAP-003) ----------------------- */
+
+/** Stav hráče, který dohrál všech jedenáct planet. */
+function stateFinished() {
+  const state = stateWithCompleted(PLANETS.map((p) => p.id));
+  state.profile = { name: 'Ahsoka', createdAt: '2026-01-01T00:00:00Z' };
+  return state;
+}
+
+function memoryStorage() {
+  const data = new Map();
+  return {
+    getItem: (key) => (data.has(key) ? data.get(key) : null),
+    setItem: (key, value) => data.set(key, String(value)),
+    removeItem: (key) => data.delete(key),
+  };
+}
+
+test('TDD-MAP-003-H: mapa ukazuje titul vedle jména a ten roste s postupem', () => {
+  const titleOf = (state) => {
+    const { root } = renderMap(state);
+    const chip = root.querySelector('.map-player-title');
+    assert.ok(chip, 'panel hráče neukazuje titul');
+    assert.ok(root.querySelector('.map-player').contains(chip), 'titul nestojí u jména');
+    return chip.textContent;
+  };
+
+  assert.equal(titleOf(createDefaultState()), 'Padawan');
+  assert.equal(titleOf(stateWithCompleted(['tatooine', 'hoth', 'dagobah', 'deathstar'])), 'Rytíř Jedi');
+  assert.equal(titleOf(stateWithCompleted(CORE_PLANETS.map((p) => p.id))), 'Mistr Jedi');
+  assert.equal(titleOf(stateFinished()), 'Člen rady Jedi');
+});
+
+test('TDD-MAP-003-I: po poslední planetě se otevře slavnost Rady Jedi, a jen jednou', () => {
+  const state = stateFinished();
+  const storage = memoryStorage();
+  const store = createSaveStore(storage);
+
+  const container = createContainer();
+  const screen = createMapScreen(container, {
+    state,
+    onStartMission: () => {},
+    onStateChanged: () => store.save(state),
+  });
+
+  const overlay = container.querySelector('.council-overlay');
+  assert.ok(overlay, 'po dokončení všech planet nepřišla slavnostní obrazovka');
+  assert.equal(overlay.getAttribute('role'), 'dialog');
+  assert.ok(overlay.querySelector('.council-badge'), 'chybí odznak Rady Jedi');
+  assert.equal(overlay.querySelector('.council-badge').getAttribute('role'), 'img');
+  assert.ok(overlay.textContent.includes('Ahsoka'), 'slavnost neoslovuje hráče jménem');
+  assert.ok(overlay.querySelector('.confetti'), 'chybí konfety');
+  assert.ok(
+    overlay.textContent.includes(String(PLANETS.length)),
+    'hláška neříká, kolik planet je osvobozených - a číslo má jít z dat'
+  );
+
+  // Dialog si vezme fokus dovnitř (overlay se zavěsí do dokumentu dřív).
+  assert.ok(overlay.contains(document.activeElement), 'fokus zůstal mimo slavnost');
+
+  // Zavřít je v patičce, tedy vidět bez rolování, a je to dotykový cíl .btn.
+  const panel = overlay.querySelector('.solution-panel');
+  const footer = overlay.querySelector('.overlay-footer');
+  assert.ok(footer, 'slavnost nemá patičku se zavíracím tlačítkem');
+  assert.equal(panel.childNodes[panel.childNodes.length - 1], footer, 'patička není poslední v panelu');
+  assert.ok(panel.classList.contains('solution-panel--framed'), 'panel roluje celý i s tlačítkem');
+  const closeBtn = footer.querySelectorAll('button')[0];
+  assert.equal(closeBtn.textContent, 'Pokračovat na mapu');
+  assert.ok(closeBtn.classList.contains('btn'), 'zavírací tlačítko nemá dotykový cíl třídy .btn');
+
+  // Po zavření se hráč vrátí na mapu i fokusem.
+  closeBtn.click();
+  assert.equal(container.querySelector('.council-overlay'), null, 'slavnost nejde zavřít');
+  assert.equal(document.activeElement, screen.element.querySelector('h1'), 'fokus po zavření spadl mimo mapu');
+
+  // Podruhé už slavnost nepřijde - ani ve stejném sezení, ani po uložení
+  // a načtení savu (značka musí přežít JSON, ne jen běh).
+  assert.equal(renderMap(state).root.querySelector('.council-overlay'), null, 'konfety při každém návratu na mapu');
+  const loaded = store.load();
+  assert.ok(loaded, 'stav se slavností se neuložil');
+  assert.equal(
+    renderMap(loaded).root.querySelector('.council-overlay'),
+    null,
+    'po načtení savu se slavnost spustila znovu'
+  );
+  // Titul ale zůstává napořád.
+  assert.equal(renderMap(loaded).root.querySelector('.map-player-title').textContent, 'Člen rady Jedi');
+});
+
+test('TDD-MAP-003-J: hláška Rady vystřídá Mistra Jediho a neslibuje cestu, která už není', () => {
+  const { root } = renderMap(stateFinished());
+  const banner = root.querySelector('.master-jedi');
+  assert.ok(banner, 'dohraná hra nemá na mapě žádný titul');
+  assert.ok(banner.classList.contains('master-jedi--council'));
+  assert.ok(banner.textContent.includes('ČLEN RADY JEDI'));
+  assert.equal(banner.textContent.includes('MISTR JEDI'), false, 'na mapě svítí oba tituly naráz');
+  assert.equal(
+    banner.textContent.includes('čeká další cesta'),
+    false,
+    'dohranému hráči hláška slibuje pokračování, které neexistuje'
+  );
+  assert.ok(banner.textContent.includes(String(PLANETS.length)), 'počet planet v hlášce má jít z dat');
+
+  // Pětka planet zůstává u své původní hlášky (starý save o nic nepřijde).
+  const master = renderMap(stateWithCompleted(CORE_PLANETS.map((p) => p.id))).root.querySelector('.master-jedi');
+  assert.ok(master.textContent.includes('MISTR JEDI'));
+  assert.equal(master.classList.contains('master-jedi--council'), false);
+});
+
+test('TDD-MAP-003-M: pruh na mapě mluví o titulu, který hráč právě má', () => {
+  // Pruh měl text natvrdo, takže hráči s osmi planetami křičel 'MISTR JEDI',
+  // zatímco vedle jména mu svítil odznak 'Strážce Řádu' - mapa tvrdila dvě
+  // věci najednou. Text teď jde ze žebříčku, takže se rozejít nemůže.
+  const ids = PLANETS.map((p) => p.id);
+  for (const pocet of [CORE_PLANETS.length, CORE_PLANETS.length + 3, PLANETS.length]) {
+    const { root } = renderMap(stateWithCompleted(ids.slice(0, pocet)));
+    const odznak = root.querySelector('.map-player-title').textContent;
+    const banner = root.querySelector('.master-jedi');
+    assert.ok(banner, `${pocet} planet: chybí oslavný pruh`);
+    assert.ok(
+      banner.textContent.toUpperCase().includes(odznak.toUpperCase()),
+      `${pocet} planet: pruh hlásí ${JSON.stringify(banner.textContent)}, ale odznak je '${odznak}'`
+    );
+  }
+
+  // Pod milníkem se pruh nekreslí vůbec - oslava každé planety by zevšedněla.
+  const knight = renderMap(stateWithCompleted(ids.slice(0, 4)));
+  assert.equal(knight.root.querySelector('.map-player-title').textContent, 'Rytíř Jedi');
+  assert.equal(knight.root.querySelector('.master-jedi'), null, 'pruh se ukazuje i mimo milník');
+});
+
+test('TDD-MAP-003-K: přechod na obrazovku nepřebije fokus otevřeného modálu', () => {
+  // main.js po překreslení posílá fokus na h1 obrazovky. Kdyby to udělal
+  // i nad otevřenou slavností, hráč by se ocitl POD modálem: čtečka i Tab
+  // by četly mapu, kterou overlay překrývá.
+  const withDialog = createContainer();
+  createMapScreen(withDialog, { state: stateFinished(), onStartMission: () => {} });
+  const inDialog = document.activeElement;
+  assert.ok(
+    withDialog.querySelector('.council-overlay').contains(inDialog),
+    'předpoklad testu neplatí - slavnost si fokus nevzala'
+  );
+  focusNewScreen(withDialog);
+  assert.equal(document.activeElement, inDialog, 'fokus utekl ze slavnosti na nadpis pod ní');
+
+  // Bez otevřeného modálu ale nadpis fokus dostat musí.
+  const plain = createContainer();
+  createMapScreen(plain, { state: createDefaultState(), onStartMission: () => {} });
+  focusNewScreen(plain);
+  const h1 = plain.querySelector('h1');
+  assert.equal(document.activeElement, h1, 'po přechodu na obrazovku fokus nikam nemíří');
+  assert.equal(h1.tabIndex, -1, 'nadpis není fokusovatelný');
+});
+
+test('titul i slavnost jsou čitelné a s vypnutým pohybem mají statickou náhradu', () => {
+  const rules = parseCss(cssText);
+  const panel = cssColor('--color-bg-panel');
+  /** Barva z CSS, i když je schovaná za proměnnou. */
+  const solid = (value) => (value?.startsWith('var(') ? cssColor(value.slice(4, -1)) : value);
+
+  for (const selector of [
+    '.map-player-title',
+    '.stats-profile-title',
+    '.stats-profile-name',
+    '.council-name',
+    '.council-text',
+    '.council-hint',
+  ]) {
+    const color = solid(resolveValue(rules, selector, 'color'));
+    assert.ok(color, `${selector}: nemá vlastní barvu textu`);
+    assert.ok(
+      contrast(color, panel) >= 4.5,
+      `${selector}: text ${color} má proti panelu jen ${contrast(color, panel).toFixed(2)}:1`
+    );
+    // Ztlumený stav se nedělá průhledností - vnořené opacity se násobí
+    // a text spadne pod čitelnou hranici (poučení z dílny).
+    assert.equal(resolveValue(rules, selector, 'opacity'), null, `${selector}: text se ztlumuje průhledností`);
+  }
+
+  // Panel hráče musí umět zalomit řádek - s titulem je v něm o položku víc.
+  assert.equal(resolveValue(rules, '.map-player', 'flex-wrap'), 'wrap');
+
+  // Jméno, titul a postup jsou v přehledu tři sousední <span> bez mezer
+  // v DOM - bez vlastní mezery se slijí do 'ReyMistr Jedi5 z 11 planet'
+  // (naměřeno v prohlížeči, textContent to nepozná).
+  assert.equal(resolveValue(rules, '.stats-profile', 'display'), 'flex');
+  assert.ok(resolveValue(rules, '.stats-profile', 'gap'), 'profil v přehledu nemá mezery mezi položkami');
+
+  // Odznak si drží velikost i na nízkém okně - flex ho jinak smrskne na
+  // nulu a ze slavnosti zbude holý text (naměřeno na 800x360).
+  assert.equal(resolveValue(rules, '.council-badge', 'flex'), 'none');
+
+  // Omezený pohyb: odznak přestane pulzovat, konfety zmizí úplně - a proto
+  // musí slavnost dostat statickou náhradu, jinak z oslavy zbude holé okno.
+  assert.equal(resolveAnimation(rules, '.council-badge', true), 'none');
+  assert.notEqual(resolveAnimation(rules, '.council-badge', false), 'none', 'odznak nepulzuje ani normálně');
+  assert.equal(resolveValue(rules, '.confetti', 'display', true), 'none');
+  assert.ok(
+    resolveValue(rules, '.council-overlay .solution-panel', 'box-shadow', true),
+    'slavnost nemá pod vypnutým pohybem žádnou náhradu za konfety a pulz'
+  );
+  assert.equal(
+    resolveValue(rules, '.council-overlay .solution-panel', 'box-shadow', false),
+    null,
+    'náhrada svítí i s puštěnými animacemi - pak to není náhrada'
+  );
+  // Odznak je vidět i bez animace (zář má i základní pravidlo).
+  assert.ok(resolveValue(rules, '.council-badge', 'filter'), 'odznak má lesk jen z animace');
 });

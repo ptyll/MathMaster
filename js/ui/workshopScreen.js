@@ -5,7 +5,7 @@
  */
 
 import { PLANETS } from '../content/planets.js';
-import { makeDialogAccessible } from './dialogA11y.js';
+import { createOverlay } from './overlay.js';
 import { createPartArt } from './craftArt.js';
 import {
   GROUPS,
@@ -50,64 +50,6 @@ function needCrystalText(color, count) {
   const amount = count === 1 ? '' : `${count}× `;
   const source = planet ? ` z ${planet.nameGenitive}` : '';
   return `Potřebuješ ${amount}${color} krystal${source}`;
-}
-
-function createOverlay(titleText, onClose) {
-  const overlay = document.createElement('div');
-  overlay.className = 'solution-overlay';
-  overlay.setAttribute('role', 'dialog');
-  overlay.setAttribute('aria-modal', 'true');
-  overlay.setAttribute('aria-label', titleText);
-
-  // --framed: roluje jen obsah, nadpis a patička se Zavřít zůstanou na místě.
-  const panel = document.createElement('div');
-  panel.className = 'solution-panel solution-panel--framed';
-
-  const title = document.createElement('h2');
-  title.textContent = titleText;
-
-  const content = document.createElement('div');
-  content.className = 'overlay-content';
-
-  const closeBtn = document.createElement('button');
-  closeBtn.type = 'button';
-  closeBtn.className = 'btn btn-primary';
-  closeBtn.textContent = 'Zavřít';
-
-  // Zavřít bydlí v patičce mimo rolující obsah (.overlay-footer), takže je
-  // vidět hned po otevření. Dílna se čtyřmi skupinami je vyšší než tablet a
-  // tlačítko na konci obsahu bylo mimo obraz - hráč bez klávesnice neměl
-  // z dialogu cestu ven. V DOM zůstává poslední, cyklení fokusu se nemění.
-  const footer = document.createElement('div');
-  footer.className = 'overlay-footer';
-  footer.appendChild(closeBtn);
-
-  panel.append(title, content, footer);
-  overlay.appendChild(panel);
-
-  let a11y = null;
-  const close = () => {
-    if (a11y) {
-      a11y.detach();
-      a11y = null;
-    }
-    overlay.remove();
-    onClose?.();
-  };
-  closeBtn.addEventListener('click', close);
-
-  /**
-   * Zavěsí dialog do dokumentu a teprve pak zapne a11y obsluhu. Pořadí je
-   * podstatné: makeDialogAccessible volá title.focus(), a focus() na dosud
-   * odpojeném uzlu je v prohlížeči no-op - fokus by zůstal na tlačítku,
-   * které dialog otevřelo, tedy mimo modál.
-   */
-  function mount(container) {
-    container.appendChild(overlay);
-    a11y = makeDialogAccessible(overlay, panel, close);
-  }
-
-  return { overlay, content, closeBtn, close, mount };
 }
 
 /**

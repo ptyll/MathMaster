@@ -144,6 +144,21 @@ class StubElement {
     return node === this || this.descendants().includes(node);
   }
 
+  /**
+   * Nejbližší předek (včetně sebe), na který sedí selektor. Hra se tím ptá,
+   * jestli je fokusovaný prvek uvnitř otevřeného modálu ([role="dialog"]).
+   */
+  closest(selector) {
+    let node = this;
+    while (node) {
+      if (matches(node, selector)) {
+        return node;
+      }
+      node = node.parentNode;
+    }
+    return null;
+  }
+
   setAttribute(name, value) {
     this.attributes.set(name, String(value));
     if (name === 'tabindex') {

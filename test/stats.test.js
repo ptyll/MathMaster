@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { createDefaultState, migrate, SCHEMA_VERSION } from '../js/engine/state.js';
 import { createSaveStore } from '../js/engine/save.js';
@@ -357,4 +358,79 @@ test('na přehled se dá jen z mapy a vede z něj jen zpět na mapu', () => {
   assert.equal(machine.current, SCREENS.STATS);
   assert.equal(machine.canGo(SCREENS.MISSION), false);
   assert.equal(machine.canGo(SCREENS.MAP), true);
+});
+
+/* --- Profil hráče v přehledu (UCV-MAP-003) -------------------------------
+ *
+ * Přehled je jediné místo mimo mapu, kde se titul ukazuje ('v profilu'),
+ * takže se testuje přes DOM stub - kdyby ho obrazovka jen počítala a
+ * nevykreslila, model by byl pořád zelený.
+ */
+
+const { installDom, createContainer } = await import('./domStub.js');
+installDom(); // až po statických importech výš - engine na document nesahá
+const { createStatsScreen } = await import('../js/ui/statsScreen.js');
+const { PLANETS } = await import('../js/content/planets.js');
+const { COUNCIL_PLANET_COUNT } = await import('../js/engine/titles.js');
+
+/** Stav s dokončenými planetami a dost daty na vyhodnocení. */
+function stateForReport(completedCount, name = 'Rey') {
+  const state = createDefaultState();
+  state.profile = { name, createdAt: '2026-01-01T00:00:00Z' };
+  state.planets = PLANETS.slice(0, completedCount).map((p) => ({
+    planetId: p.id,
+    unlockedLevels: p.missions.length,
+    starsPerLevel: Object.fromEntries(p.missions.map((m) => [m.id, m.boss ? 1 : 3])),
+    bestStreak: 3,
+  }));
+  state.stats.totalAttempts = 60;
+  state.stats.totalSolved = 45;
+  state.stats.perTopic.equations = { solved: 45, attempts: 60, lastErrors: [], errors: { sign: 4 } };
+  return state;
+}
+
+test('TDD-MAP-003-L: přehled pro rodiče ukazuje jméno hráče, titul a postup', () => {
+  const container = createContainer();
+  createStatsScreen(container, { state: stateForReport(5), onBack: () => {} });
+  const profile = container.querySelector('.stats-profile');
+  assert.ok(profile, 'přehled neukazuje profil hráče');
+  assert.ok(profile.textContent.includes('Rey'), 'chybí jméno hráče');
+  assert.equal(profile.querySelector('.stats-profile-title').textContent, 'Mistr Jedi');
+  assert.ok(
+    profile.textContent.includes(`5 z ${COUNCIL_PLANET_COUNT} planet`),
+    `postup planetami chybí: "${profile.textContent}"`
+  );
+  // Počet musí jít z téhož zdroje jako titul Rady. Chováním to dnes rozlišit
+  // NELZE - PLANETS.length i COUNCIL_PLANET_COUNT jsou shodně 11, takže by
+  // vykreslený text vyšel stejně tak i tak a assert výš by prošel naprázdno.
+  // Rozdíl se projeví až dvanáctou planetou ('5 z 12' vedle Rady počítané
+  // z 11), proto se ptáme rovnou na zdroj.
+  const statsSource = readFileSync(new URL('../js/ui/statsScreen.js', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, ''); // komentáře pryč - mluví se v nich i o tom, co se tu zakazuje
+  assert.match(
+    statsSource,
+    /COUNCIL_PLANET_COUNT/,
+    'přehled nepočítá planety ze stejného zdroje jako titul Rady'
+  );
+  assert.equal(
+    /PLANETS\.length/.test(statsSource),
+    false,
+    'přehled si počet planet dopočítává z PLANETS.length - po přidání planety se rozejde s titulem Rady'
+  );
+
+  // Titul patří i k novému hráči, kde se vyhodnocení ještě nezapnulo -
+  // rodič otevře přehled dřív, než dítě nasbírá dost příkladů.
+  const early = createContainer();
+  const fresh = createDefaultState();
+  fresh.profile = { name: 'Nový', createdAt: '2026-08-01T00:00:00Z' };
+  createStatsScreen(early, { state: fresh, onBack: () => {} });
+  assert.ok(early.querySelector('.stats-early'), 'předpoklad testu: málo dat na vyhodnocení');
+  assert.equal(early.querySelector('.stats-profile-title').textContent, 'Padawan');
+  assert.ok(early.querySelector('.stats-profile').textContent.includes(`0 z ${PLANETS.length} planet`));
+
+  // Dohraná hra: nejvyšší titul.
+  const done = createContainer();
+  createStatsScreen(done, { state: stateForReport(PLANETS.length, 'Ahsoka'), onBack: () => {} });
+  assert.equal(done.querySelector('.stats-profile-title').textContent, 'Člen rady Jedi');
 });

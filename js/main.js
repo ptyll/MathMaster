@@ -17,6 +17,7 @@ import { createMapScreen } from './ui/mapScreen.js';
 import { createMissionScreen } from './ui/missionScreen.js';
 import { createEvaluationScreen } from './ui/evaluationScreen.js';
 import { createStatsScreen } from './ui/statsScreen.js';
+import { focusNewScreen } from './ui/dialogA11y.js';
 import { getMission, getNextMission, isFinalMissionOfPlanet, getPlanet, PLANETS } from './content/planets.js';
 
 const store = createBrowserSaveStore();
@@ -129,12 +130,9 @@ function render(screen, context = {}) {
   }
 
   // Po přechodu přesunout fokus na nadpis nové obrazovky - klávesový
-  // uživatel a screen reader jinak "ztratí půdu pod nohama".
-  const heading = el.querySelector('h1');
-  if (heading) {
-    heading.tabIndex = -1;
-    heading.focus();
-  }
+  // uživatel a screen reader jinak "ztratí půdu pod nohama". Obrazovka,
+  // která si otevřela modál (slavnost za titul), si fokus drží sama.
+  focusNewScreen(el);
 }
 
 render(machine.current);

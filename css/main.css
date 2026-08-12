@@ -713,8 +713,12 @@ p {
 
 .map-player {
   display: flex;
-  gap: 1.5rem;
+  gap: 1rem;
   align-items: center;
+  /* S titulem hráče (UCV-MAP-003) je v panelu o položku víc - na 600 px
+     na šířku by se řádek jinak roztáhl přes okraj obrazovky. */
+  flex-wrap: wrap;
+  justify-content: center;
   background: var(--color-bg-panel);
   border-radius: var(--radius);
   padding: 0.5rem 1.25rem;
@@ -723,6 +727,20 @@ p {
 .map-player-name {
   font-weight: 700;
   font-size: 1.15rem;
+}
+
+/* Titul hráče vedle jména (mapa) a v přehledu pro rodiče: Padawan -> ...
+   -> Člen rady Jedi. Odlišený rámečkem a zlatou barvou, ne ztlumením -
+   stav se má číst stejně dobře jako jméno (kontrast 12:1 proti panelu). */
+.map-player-title,
+.stats-profile-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffd94d;
+  border: 2px solid rgba(255, 217, 77, 0.6);
+  border-radius: 999px;
+  padding: 0.1rem 0.75rem;
+  white-space: nowrap;
 }
 
 .map-crystals {
@@ -934,6 +952,58 @@ p {
 
 @keyframes confetti-fall {
   to { transform: translateY(105vh) rotate(720deg); }
+}
+
+/* Nejvyšší titul si zaslouží víc než Mistr Jedi - jinak by dohrání
+   jedenácté planety vypadalo stejně jako dohrání páté. */
+.master-jedi--council {
+  font-size: 1.7rem;
+  letter-spacing: 0.02em;
+}
+
+/* --- Slavnost Rady Jedi (UCV-MAP-003) --- */
+
+.council-celebration {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.council-badge {
+  /* Zář drží i bez animace - hráč s vypnutým pohybem nesmí dostat
+     odznak bez lesku (animace se pak jen nepřehraje). */
+  filter: drop-shadow(0 0 10px rgba(255, 217, 77, 0.5));
+  animation: council-shine 2.4s ease-in-out infinite;
+  /* Na nízkém okně (na výšku 360 px) flex odznak smrskl na nulu a z
+     oslavy zbyl text. Radši ať roluje obsah, odznak si výšku drží. */
+  flex: none;
+}
+
+@keyframes council-shine {
+  0%, 100% { filter: drop-shadow(0 0 8px rgba(255, 217, 77, 0.45)); }
+  50% { filter: drop-shadow(0 0 22px rgba(255, 217, 77, 0.95)); }
+}
+
+.council-name {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #ffd94d;
+}
+
+.council-text {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  /* Hlavní věta oslavy - plná barva textu, ne ztlumená barva odstavců. */
+  color: var(--color-text);
+}
+
+.council-hint {
+  margin: 0;
+  color: var(--color-text-dim);
 }
 
 /* --- Odměny, crafting, boss (fáze 7) --- */
@@ -1547,6 +1617,31 @@ p {
   max-width: none;
 }
 
+/* Profil hráče v přehledu: jméno, titul (UCV-MAP-003) a postup planetami.
+   Flex s mezerou, ne spoléhání na mezery mezi span-y - ty v DOM nejsou
+   a jméno by se slepilo s titulem ('ReyMistr Jedi'). */
+.stats-profile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0;
+  /* Odstavce mají v této hře max-width 46ch kvůli čitelnosti textu -
+     řádek profilu ale není text k přečtení, jen tři údaje vedle sebe,
+     a na 46ch se zbytečně lámal na dva řádky. */
+  max-width: none;
+}
+
+.stats-profile-name {
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--color-text);
+}
+
+.stats-profile-progress {
+  color: var(--color-text-dim);
+}
+
 /* Čtyři dlaždice: 4 v řadě na šířku, 2x2 na úzkém. auto-fit tu nestačí -
    dlouhé popisky protlačí minimální šířku stopy a poslední dlaždice spadne sama. */
 .stat-tiles {
@@ -2068,5 +2163,12 @@ p {
   /* Pobízející nápověda pulzovala; klidné zvýraznění řekne totéž beze změn. */
   .btn-hint.attention {
     background: rgba(255, 217, 77, 0.18);
+  }
+
+  /* Slavnost za titul Člen rady Jedi stojí na konfetách a na pulzu odznaku
+     - obojí je tady pryč. Statická zlatá zář kolem panelu udrží dojem
+     oslavy, aby dohrání celé hry nevypadalo jako obyčejné okno. */
+  .council-overlay .solution-panel {
+    box-shadow: 0 0 0 3px #ffd94d, 0 0 40px rgba(255, 217, 77, 0.3);
   }
 }

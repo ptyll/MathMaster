@@ -1,7 +1,34 @@
 /**
- * Sdílená a11y obsluha overlay dialogů: Escape zavře, Tab cyklí uvnitř,
- * při otevření fokus do panelu. Používají overlaye nad mapou
- * (solutionViewer má vlastní ekvivalent).
+ * A11y obsluha modálních dialogů a fokus po přechodu mezi obrazovkami.
+ * Používají to overlaye nad mapou (solutionViewer má vlastní ekvivalent)
+ * a main.js při překreslení obrazovky.
+ */
+
+/**
+ * Fokus po přechodu na novou obrazovku: nadpis h1, ať klávesový uživatel
+ * i odečítač vědí, kde jsou. Výjimka je obrazovka, která si při vzniku
+ * otevřela modální dialog - té fokus nepřebíjíme.
+ *
+ * @param {HTMLElement} el kořen nově vykreslené obrazovky
+ */
+export function focusNewScreen(el) {
+  // Obrazovka si mohla fokus umístit sama - mapa po dokončení poslední
+  // planety otevírá slavnost Rady Jedi (UCV-MAP-003) a ta je modální.
+  // Přebít ji nadpisem by hráče postavilo POD otevřený dialog: čtečka i
+  // Tab by pokračovaly v mapě, kterou překrývá overlay.
+  const active = document.activeElement;
+  if (active && el.contains(active) && active.closest?.('[role="dialog"]')) {
+    return;
+  }
+  const heading = el.querySelector('h1');
+  if (heading) {
+    heading.tabIndex = -1;
+    heading.focus();
+  }
+}
+
+/**
+ * Escape zavře, Tab cyklí uvnitř, při otevření fokus do panelu.
  *
  * @param {HTMLElement} overlay prvek s overlay rolí
  * @param {HTMLElement} panel panel s tlačítky

@@ -1,6 +1,6 @@
 /**
  * Galaktická mapa (UCV-MAP-001): pás planet, odemykání postupem,
- * hvězdy, panel hráče, seznam misí planety, stav 'Mistr Jedi'.
+ * hvězdy, panel hráče, seznam misí planety, titul hráče (UCV-MAP-003).
  */
 
 import { PLANETS, CORE_PLANETS } from '../content/planets.js';
@@ -13,8 +13,16 @@ import {
   starsFor,
   totalCrystals,
 } from '../engine/unlock.js';
+import {
+  titleFor,
+  isJediCouncil,
+  hasSeenCouncilCelebration,
+  markCouncilCelebrationSeen,
+  COUNCIL_PLANET_COUNT,
+} from '../engine/titles.js';
 import { createPlanetArt, createStarfield } from './planetArt.js';
 import { createInventoryOverlay, createWorkshopOverlay } from './workshopScreen.js';
+import { createCouncilCelebration, createConfetti } from './councilScreen.js';
 import { createParentGate } from './parentGate.js';
 
 /** Šířka karty planety + mezera (css .planet-card min-width + .planet-strip gap). */
@@ -52,6 +60,12 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
   const name = document.createElement('span');
   name.className = 'map-player-name';
   name.textContent = state.profile?.name ?? 'Padawan';
+  // Titul vedle jména (UCV-MAP-003): Padawan -> ... -> Člen rady Jedi.
+  // Roste s dokončenými planetami, takže na mapě je pořád vidět, jak
+  // daleko hráč došel - ne až v odměnách.
+  const rank = document.createElement('span');
+  rank.className = 'map-player-title';
+  rank.textContent = titleFor(state).label;
   const crystalsBtn = document.createElement('button');
   crystalsBtn.type = 'button';
   crystalsBtn.className = 'btn btn-ghost btn-crystals';
@@ -61,7 +75,7 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
   workshopBtn.type = 'button';
   workshopBtn.className = 'btn btn-ghost';
   workshopBtn.textContent = '🔧 Dílna';
-  panel.append(name, crystalsBtn, workshopBtn);
+  panel.append(name, rank, crystalsBtn, workshopBtn);
 
   // Rodičovská brána - drží se 3 s, aby na přehled nespadlo dítě omylem.
   let parentGate = null;
@@ -102,14 +116,19 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
     });
   });
 
-  // --- Mistr Jedi stav ---
-  // Titul se počítá jen z původní pětky (UCV-MAP-002): endgame řetěz visí
-  // za ní, takže hráč, který kdysi dobyl Coruscant, o titul nesmí přijít.
-  // Text proto netvrdí, že jsou osvobozené všechny planety - nejsou.
-  if (isMasterJedi(state, CORE_PLANETS)) {
+  // --- Oslavný pruh k dosaženému titulu ---
+  // Text bere ze žebříčku (titles.js), ne z vlastní podmínky: dokud tu stálo
+  // natvrdo 'MISTR JEDI', křičel pruh totéž i na hráče, který měl vedle jména
+  // odznak 'Strážce Řádu' - mapa mu tvrdila dvě věci najednou. Pruh dostávají
+  // jen milníky (ty mají v TITLES vyplněný banner), aby oslava nezevšedněla.
+  // Mistr Jedi se dál počítá jen z původní pětky (UCV-MAP-002): endgame řetěz
+  // visí za ní, takže hráč, který kdysi dobyl Coruscant, o titul nepřijde.
+  const councilMember = isJediCouncil(state);
+  const rankBanner = councilMember || isMasterJedi(state, CORE_PLANETS) ? titleFor(state).banner : null;
+  if (rankBanner) {
     const master = document.createElement('div');
-    master.className = 'master-jedi';
-    master.textContent = '🎉 MISTR JEDI! Základní výcvik máš za sebou - a za Coruscantem čeká další cesta. 🎉';
+    master.className = 'master-jedi' + (councilMember ? ' master-jedi--council' : '');
+    master.textContent = rankBanner;
     root.appendChild(master);
     root.appendChild(createConfetti());
   }
@@ -283,29 +302,35 @@ export function createMapScreen(container, { state, onStartMission, onStateChang
   cards[currentIndex]?.scrollIntoView?.({ inline: 'center', block: 'nearest' });
   updateScrollAffordance();
 
+  // --- Slavnost za přijetí do Rady Jedi (UCV-MAP-003) ---
+  // Otevírá se až tady, tedy s mapou zavěšenou v dokumentu: dialog si při
+  // otevření bere fokus a focus() na odpojeném uzlu je no-op.
+  // Značku 'viděno' zapisujeme PŘED zobrazením a hned ukládáme, aby se
+  // konfety nespouštěly při každém návratu na mapu.
+  let celebration = null;
+  if (isJediCouncil(state) && !hasSeenCouncilCelebration(state)) {
+    markCouncilCelebrationSeen(state);
+    onStateChanged?.();
+    // Nadpis mapy musí být fokusovatelný, jinak by po zavření slavnosti
+    // fokus spadl na <body> a hráč u klávesnice by tabovat začal od začátku
+    // stránky. (Mimo slavnost mu tabindex nastavuje main.js.)
+    h1.tabIndex = -1;
+    celebration = createCouncilCelebration(root, {
+      name: state.profile?.name ?? 'Padawan',
+      onClose: () => {
+        celebration = null;
+        h1.focus();
+      },
+    });
+  }
+
   return {
     element: root,
     destroy() {
       closeOverlay();
+      celebration?.destroy();
       parentGate?.destroy();
       root.remove();
     },
   };
-}
-
-/** Jednoduché CSS konfety pro stav Mistr Jedi. */
-function createConfetti() {
-  const wrap = document.createElement('div');
-  wrap.className = 'confetti';
-  wrap.setAttribute('aria-hidden', 'true');
-  const colors = ['#ffd94d', '#4da3ff', '#7ee08c', '#ff8a8a', '#c58aff'];
-  for (let i = 0; i < 24; i++) {
-    const piece = document.createElement('span');
-    piece.className = 'confetti-piece';
-    piece.style.left = `${(i * 37) % 100}%`;
-    piece.style.background = colors[i % colors.length];
-    piece.style.animationDelay = `${(i % 8) * 0.35}s`;
-    wrap.appendChild(piece);
-  }
-  return wrap;
 }

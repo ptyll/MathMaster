@@ -39,6 +39,13 @@ export function createDefaultState() {
         wordProblems: emptyTopicStats(),
       },
     },
+    // Jednorázové slavnosti (UCV-MAP-003). Titul se pořád počítá z
+    // dokončených planet - tady je jen značka, že konfety za přijetí do
+    // Rady Jedi už proběhly. Starý save klíč nemá; čte se přes
+    // hasSeenCouncilCelebration(), takže migraci nepotřebuje.
+    awards: {
+      councilCelebrated: false,
+    },
     settings: {
       sound: true,
       hintsLevel: 'full', // 'full' | 'reduced'

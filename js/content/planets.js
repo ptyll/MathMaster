@@ -200,6 +200,20 @@ export const PLANETS = [
  */
 export const CORE_PLANETS = PLANETS.filter((p) => p.tier === 'core');
 
+/**
+ * Planety cesty k titulu Člen rady Jedi (UCV-MAP-003) - dnes core + endgame,
+ * tedy všech jedenáct.
+ *
+ * Seznam je vázaný na TIERY, ne na celé PLANETS, přesně z důvodu, proč
+ * vznikl CORE_PLANETS: titul za "všechno" se nesmí sám odebrat, až se hra
+ * rozšíří. Kdyby se počítal z PLANETS, dostal by hráč s hotovým Dathomirem
+ * po přidání dvanácté planety zpátky nižší titul.
+ *
+ * Až tedy příště přibude planeta, dej jí NOVÝ tier a odměnu za ni řeš
+ * novým titulem - do 'core' ani 'endgame' ji nepřidávej.
+ */
+export const COUNCIL_PLANETS = PLANETS.filter((p) => p.tier === 'core' || p.tier === 'endgame');
+
 export function getPlanet(id) {
   return PLANETS.find((p) => p.id === id) ?? null;
 }

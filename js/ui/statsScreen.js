@@ -9,6 +9,7 @@
  */
 
 import { summarizeStats, formatPercent, formatDuration, MIN_EXERCISES_FOR_REPORT } from '../engine/stats.js';
+import { titleFor, completedPlanetCount, COUNCIL_PLANET_COUNT } from '../engine/titles.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -37,13 +38,32 @@ export function createStatsScreen(container, { state, onBack }) {
   intro.className = 'stats-intro';
   intro.textContent = 'Data zůstávají jen v tomhle prohlížeči, nikam se neodesílají.';
 
+  // Profil hráče: jméno, titul a postup planetami (UCV-MAP-003). Stojí nad
+  // podmínkou "dost dat" schválně - rodič se na titul může ptát dřív, než
+  // se zapne vyhodnocení, a dítě se jím chlubí od první planety.
+  const profile = document.createElement('p');
+  profile.className = 'stats-profile';
+  const playerName = document.createElement('span');
+  playerName.className = 'stats-profile-name';
+  playerName.textContent = state.profile?.name ?? 'Padawan';
+  const rank = document.createElement('span');
+  rank.className = 'stats-profile-title';
+  rank.textContent = titleFor(state).label;
+  const progress = document.createElement('span');
+  progress.className = 'stats-profile-progress';
+  // Počet bereme z téhož zdroje jako titul Rady (COUNCIL_PLANET_COUNT), ne
+  // z PLANETS.length: dnes je to totéž, ale dvanáctá planeta by přehledu dala
+  // '5 z 12', zatímco Rada by se pořád počítala z 11.
+  progress.textContent = `${completedPlanetCount(state)} z ${COUNCIL_PLANET_COUNT} planet dokončeno`;
+  profile.append(playerName, rank, progress);
+
   const backBtn = document.createElement('button');
   backBtn.type = 'button';
   backBtn.className = 'btn btn-ghost';
   backBtn.textContent = 'Zpět na mapu';
   backBtn.addEventListener('click', onBack);
 
-  root.append(h1, intro);
+  root.append(h1, intro, profile);
 
   if (!summary.hasEnoughData) {
     const early = document.createElement('p');

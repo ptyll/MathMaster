@@ -31,6 +31,14 @@ class StubElement {
     // Zároveň se nastavení PROMÍTÁ do atributu, stejně jako v prohlížeči:
     // bez toho by selektor '[tabindex="-1"]' (dialogA11y) buď nenašel nic, nebo
     // naopak všechno.
+    //
+    // PRAVIDLO PRO TESTY, které z toho plyne a jehož domov je TADY (v testech
+    // na něj jen odkazuj, ať se šest kopií nerozejde): tvrzení o zaostřitelnosti
+    // piš proti ATRIBUTU - getAttribute('tabindex') === '-1'. Proti vlastnosti
+    // by platilo i o prvku, na který nikdo nesáhl (výchozí -1 splyne s hodnotou,
+    // kterou tvrdíš), takže by nepoznalo ani smazání nastavení v produkci.
+    // Nenastavený prvek nemá atribut žádný (null), takže atribut rozliší
+    // 'nastaveno' od 'výchozí' i od přepisu na 0 (tab stop navíc).
     this._tabIndex = -1;
     this.type = '';
     this._text = '';

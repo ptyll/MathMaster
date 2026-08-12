@@ -1460,6 +1460,46 @@ test('UCV-LEARN-001: věta místo váhy je čitelná a drží po váze místo', 
   assert.ok(resolveValue(rules, '.balance-note', 'min-height'), 'věta místo váhy nedrží výšku - sloupec poskočí');
 });
 
+test('nadpis prohlížeče řešení unese fokus po otevření dialogu', async () => {
+  // Prohlížeč řešení posílá fokus na svůj nadpis, aby dítě u klávesnice
+  // (a odečítač) skončilo UVNITŘ dialogu, ne pod ním na obrazovce mise.
+  // `focus()` na h2 BEZ tabindexu je ale v prohlížeči no-op, takže bez toho
+  // nastavení by fokus zůstal na tlačítku, které dialog otevřelo.
+  //
+  // Co tenhle test NEUHLÍDÁ: POŘADÍ těch dvou řádků. Kdyby se focus() volal
+  // dřív než nastavení tabindexu, v prohlížeči by nezabral - a obě tvrzení níž
+  // by přesto prošla (atribut se čte až po návratu z konstruktoru a stub
+  // fokusovatelnost nemodeluje, focus() u něj uspěje na čemkoli). Chce to
+  // model zaostřitelnosti ve stubu; je to nahlášené jako zbývající práce.
+  const { installDom, createContainer } = await import('./domStub.js');
+  installDom();
+  const { createSolutionViewer } = await import('../js/ui/solutionViewer.js');
+
+  const container = createContainer();
+  const spoustec = document.createElement('button');
+  spoustec.textContent = 'Nápověda';
+  container.appendChild(spoustec);
+  spoustec.focus();
+  assert.equal(document.activeElement, spoustec, 'příprava testu: fokus nezačal na spouštěči');
+
+  createSolutionViewer(container, {
+    exercise: {
+      topic: 'equations',
+      steps: [{ operation: 'Zadání', explanation: 'Takhle to začíná.', leftSide: '3x + 4', rightSide: '19' }],
+    },
+    onClose: () => {},
+  });
+
+  const nadpis = container.querySelector('h2');
+  assert.ok(nadpis, 'prohlížeč řešení nemá nadpis');
+  // Proti ATRIBUTU, ne proti vlastnosti - proč, viz komentář u tabIndex
+  // v test/domStub.js.
+  assert.equal(nadpis.getAttribute('tabindex'), '-1', 'nadpis prohlížeče řešení není programově zaostřitelný');
+  // A že se na něj fokus opravdu poslal - stub fokusovatelnost nemodeluje,
+  // takže tohle tvrzení hlídá volání focus(), ne zaostřitelnost samu.
+  assert.equal(document.activeElement, nadpis, 'fokus po otevření zůstal mimo dialog');
+});
+
 test('UCV-LEARN-001: v prohlížeči řešení zůstane u nenakreslitelného kroku vidět rovnice', async () => {
   // Bez váhy zbude v kroku jen pokyn ('Odečti 3 z obou stran') a vysvětlení -
   // ale dítě nemá kde vidět, Z ČEHO se odečítá. Osa i zlomkové pásy proto

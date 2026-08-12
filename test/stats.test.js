@@ -441,3 +441,25 @@ test('TDD-MAP-003-L: přehled pro rodiče ukazuje jméno hráče, titul a postup
   createStatsScreen(done, { state: stateForReport(PLANETS.length, 'Ahsoka'), onBack: () => {} });
   assert.equal(done.querySelector('.stats-profile-title').textContent, 'Člen rady Jedi');
 });
+
+test('nadpis přehledu je zaostřitelný už při vzniku obrazovky', () => {
+  // Přehled si tabindex nastavuje SÁM (statsScreen.js), i když by ho po
+  // překreslení nastavil i main.js přes focusNewScreen. Je to tedy pojistka
+  // navíc, ne jediná cesta - kdo ten řádek smaže, rodič nic nepozná, dokud se
+  // obrazovka vykresluje přes main.js. (Obecnou cestu drží TDD-MAP-003-K
+  // v test/mapDom.test.js: tam mapa žádný tabindex nenastavuje, takže tvrzení
+  // po focusNewScreen může splnit jedině dialogA11y.)
+  //
+  // Tenhle test proto hlídá vlastní záruku obrazovky: nadpis je zaostřitelný
+  // hned, jak obrazovka vznikne, a to i pro volajícího, který focusNewScreen
+  // nezavolá. Kdo bude ten řádek chtít uklidit jako duplicitu, musí zrušit
+  // i tenhle test - a tím vědomě přenechat záruku main.js.
+  const container = createContainer();
+  createStatsScreen(container, { state: stateForReport(5), onBack: () => {} });
+  const h1 = container.querySelector('h1');
+  assert.ok(h1, 'přehled pro rodiče nemá nadpis');
+
+  // Proti ATRIBUTU, ne proti vlastnosti - proč, viz komentář u tabIndex
+  // v test/domStub.js.
+  assert.equal(h1.getAttribute('tabindex'), '-1', 'nadpis přehledu není programově zaostřitelný');
+});

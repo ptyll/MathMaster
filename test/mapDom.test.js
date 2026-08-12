@@ -526,10 +526,29 @@ test('TDD-MAP-003-I: po poslední planetě se otevře slavnost Rady Jedi, a jen 
   assert.equal(closeBtn.textContent, 'Pokračovat na mapu');
   assert.ok(closeBtn.classList.contains('btn'), 'zavírací tlačítko nemá dotykový cíl třídy .btn');
 
-  // Po zavření se hráč vrátí na mapu i fokusem.
+  // Po zavření se hráč vrátí na mapu i fokusem. Nadpis mapy proto musí být
+  // programově zaostřitelný: `focus()` na h1 BEZ tabindexu je v prohlížeči
+  // no-op a fokus by spadl na <body>, tedy na začátek stránky. Mimo slavnost
+  // tabindex nastavuje main.js, tady si ho mapa nastavuje sama (mapScreen.js) -
+  // focusNewScreen se totiž pod otevřeným modálem schválně vrací bez zásahu.
+  // Proti ATRIBUTU, ne proti vlastnosti (proč, viz komentář u tabIndex
+  // v test/domStub.js); samotný `activeElement` to neuhlídá, stub
+  // fokusovatelnost nemodeluje a focus() uspěje i na nezaostřitelném prvku.
+  assert.equal(
+    screen.element.querySelector('h1').getAttribute('tabindex'),
+    '-1',
+    'nadpis mapy není při slavnosti zaostřitelný'
+  );
   closeBtn.click();
   assert.equal(container.querySelector('.council-overlay'), null, 'slavnost nejde zavřít');
-  assert.equal(document.activeElement, screen.element.querySelector('h1'), 'fokus po zavření spadl mimo mapu');
+  // Nadpis se hledá ZNOVU, až po zavření: připnutá reference zpřed kliknutí by
+  // prošla i tehdy, kdyby mapa mezitím hlavičku překreslila a fokus zůstal
+  // viset na odpojeném uzlu - v prohlížeči by přitom spadl na <body>.
+  assert.equal(
+    document.activeElement,
+    screen.element.querySelector('h1'),
+    'fokus po zavření spadl mimo mapu'
+  );
 
   // Podruhé už slavnost nepřijde - ani ve stejném sezení, ani po uložení
   // a načtení savu (značka musí přežít JSON, ne jen běh).

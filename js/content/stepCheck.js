@@ -43,6 +43,130 @@ import {
  */
 export const OPERATION_KINDS = Object.freeze(['add', 'sub', 'mul', 'div', 'expand', 'combine']);
 
+/**
+ * Klíče, které operace smí nést. Cokoli navíc je překlep volajícího, ne volba.
+ *
+ * Právě na tomhle vznikl FALEŠNÝ NÁLEZ: ověřovací skript posílal
+ * { kind, value, term } místo { kind, operand, term }, každé volání spadlo až
+ * hluboko uvnitř na 'Cannot read properties of undefined (reading 'n')', skript
+ * výjimky polykal a nulový počet přijatých kroků si vyložil jako "krokový řešič
+ * má slepou uličku". Stav přitom měl 720 platných operací a nález byl nezávisle
+ * "potvrzen" druhým agentem, který zopakoval tutéž chybu.
+ * Proto se tu selhává HLUČNĚ a HNED: výjimka pojmenuje, co přišlo a co se čekalo.
+ * Tichý fallback (doplnit chybějící operand, přeskočit neznámý klíč) by tuhle
+ * vadu jen schoval hlouběji - špatné volání se nemá uhladit, ale ohlásit.
+ */
+const OPERATION_KEYS = Object.freeze(['kind', 'operand', 'term', 'side']);
+
+/** Operace, které bez operandu nedávají smysl. 'expand' a 'combine' ho nemají. */
+const KINDS_WITH_OPERAND = Object.freeze(['add', 'sub', 'mul', 'div']);
+
+/** Části stavu, na které se hra umí zeptat. Jiný identifikátor je překlep. */
+const SLOT_IDS = Object.freeze(['left.x', 'left.c', 'right.x', 'right.c']);
+
+/** Zlomek {n, d} podle týchž pravidel jako makeFraction (celé složky, d != 0). */
+const isFractionShape = (value) =>
+  value !== null &&
+  typeof value === 'object' &&
+  Number.isInteger(value.n) &&
+  Number.isInteger(value.d) &&
+  value.d !== 0;
+
+/** Strana rovnice - koeficient u x a konstanta, obojí zlomek. */
+const isSideShape = (value) =>
+  value !== null && typeof value === 'object' && isFractionShape(value.x) && isFractionShape(value.c);
+
+/** Co doopravdy přišlo - do textu výjimky, ať volající nemusí hádat. */
+function describeValue(value) {
+  if (value === null) {
+    return 'null';
+  }
+  if (Array.isArray(value)) {
+    return `pole ${JSON.stringify(value)}`;
+  }
+  return JSON.stringify(value) ?? String(value);
+}
+
+/**
+ * Kontrakt operace, ověřený na OKRAJI veřejné funkce - jednou za volání,
+ * nikdy ve vnitřní smyčce, takže běžná cesta se nezpomalí ani nezkomplikuje.
+ * @param {object} operation volání k ověření
+ * @param {string} where jméno funkce, která volání odmítá (je vidět v hlášce)
+ */
+function assertOperation(operation, where) {
+  if (operation === null || typeof operation !== 'object' || Array.isArray(operation)) {
+    throw new Error(
+      `${where}: operace musí být objekt { kind, ... }, dostal jsem ${describeValue(operation)}`
+    );
+  }
+
+  const unknown = Object.keys(operation).filter((key) => !OPERATION_KEYS.includes(key));
+  if (unknown.length > 0) {
+    throw new Error(
+      `${where}: neznámý parametr operace ${unknown.join(', ')}. Operace zná jen ${OPERATION_KEYS.join(', ')}.`
+    );
+  }
+
+  const { kind } = operation;
+  if (!OPERATION_KINDS.includes(kind)) {
+    throw new Error(
+      `${where}: neznámá operace ${describeValue(kind)}. Znám ${OPERATION_KINDS.join(', ')}.`
+    );
+  }
+
+  if (KINDS_WITH_OPERAND.includes(kind)) {
+    if (operation.operand === undefined) {
+      throw new Error(`${where}: operace '${kind}' potřebuje operand { n, d }, ale žádný nepřišel.`);
+    }
+    if (!isFractionShape(operation.operand)) {
+      throw new Error(
+        `${where}: operand operace '${kind}' musí být zlomek { n, d } s celočíselnými složkami a nenulovým jmenovatelem, dostal jsem ${describeValue(operation.operand)}`
+      );
+    }
+  }
+
+  if (operation.term !== undefined && operation.term !== 'const' && operation.term !== 'x') {
+    throw new Error(
+      `${where}: neznámý druh operandu ${describeValue(operation.term)}. Čekám 'const' nebo 'x'.`
+    );
+  }
+
+  if (kind === 'combine' && operation.side !== 'left' && operation.side !== 'right') {
+    throw new Error(
+      `${where}: operace 'combine' potřebuje stranu 'left' nebo 'right', dostal jsem ${describeValue(operation.side)}`
+    );
+  }
+}
+
+/**
+ * Kontrakt stavu rovnice na okraji veřejné funkce. Bez něj se špatný stav
+ * projeví až uvnitř - a u `checkStep` dokonce TIŠE: `safeSolvedValue` výjimku
+ * spolkne a vrátí 'notEquivalent', tedy vypadá to jako verdikt o rovnici,
+ * ačkoli je to vada volání.
+ * @param {string} label jak se stavu říká v hlášce ('stav rovnice', 'nový stav')
+ */
+function assertState(state, where, label = 'stav rovnice') {
+  if (
+    state === null ||
+    typeof state !== 'object' ||
+    !isSideShape(state.left) ||
+    !isSideShape(state.right)
+  ) {
+    throw new Error(
+      `${where}: ${label} musí být { left, right }, kde každá strana je { x: {n,d}, c: {n,d} }, dostal jsem ${describeValue(state)}`
+    );
+  }
+}
+
+/** Kontrakt identifikátoru slotu ('left.x' a spol.). */
+function assertSlot(slot, where) {
+  if (!SLOT_IDS.includes(slot)) {
+    throw new Error(
+      `${where}: neznámá část stavu ${describeValue(slot)}. Znám ${SLOT_IDS.join(', ')}.`
+    );
+  }
+}
+
 const fractionsIdentical = (a, b) => a.n === b.n && a.d === b.d;
 
 /** Je výraz tvaru samotné 'x' (koeficient 1, konstanta 0, bez závorky)? */
@@ -65,12 +189,11 @@ const isUnit = (f) => f.n === 1 && f.d === 1;
  *   (výsledný koeficient u x a/nebo součet konstant na sečtené straně).
  */
 export function applyOperation(state, operation) {
+  assertState(state, 'applyOperation');
+  assertOperation(operation, 'applyOperation');
+
   const { kind, operand } = operation;
   const term = operation.term ?? 'const';
-
-  if (!OPERATION_KINDS.includes(kind)) {
-    throw new Error(`Neznámá operace: ${kind}`);
-  }
 
   if (kind === 'expand') {
     if (!isFactored(state.left) && !isFactored(state.right)) {
@@ -88,9 +211,6 @@ export function applyOperation(state, operation) {
 
   if (kind === 'combine') {
     const sideName = operation.side;
-    if (sideName !== 'left' && sideName !== 'right') {
-      throw new Error(`Neznámá strana pro sečtení členů: ${sideName}`);
-    }
     const side = state[sideName];
     if (!needsCombine(side)) {
       return {
@@ -140,9 +260,6 @@ export function applyOperation(state, operation) {
       next: null,
       note: 'Přes závorku se přičítat nedá. Nejdřív ji roznásob, nebo obě strany vyděl číslem před ní.',
     };
-  }
-  if (term !== 'const' && term !== 'x') {
-    throw new Error(`Neznámý druh operandu: ${term}`);
   }
   if ((kind === 'mul' || kind === 'div') && term === 'x') {
     // Násobení/dělení x-členem umí zavést falešná řešení - UI ho nenabízí.
@@ -322,6 +439,11 @@ function safeSolvedValue(state) {
  * @returns {{status: 'ok'|'noProgress'|'notEquivalent', solved: boolean, note: string|null}}
  */
 export function checkStep(prev, next) {
+  // Bez téhle stráže by vadné volání skončilo jako 'notEquivalent' - tedy jako
+  // VERDIKT O ROVNICI, ne jako chyba volajícího. Přesně tak vznikl falešný nález.
+  assertState(prev, 'checkStep', 'předchozí stav');
+  assertState(next, 'checkStep', 'nový stav');
+
   const before = safeSolvedValue(prev);
   const after = safeSolvedValue(next);
   if (before === null || after === null || !fractionsIdentical(before, after)) {
@@ -351,8 +473,9 @@ export function checkStep(prev, next) {
  * @returns {('left.x'|'left.c'|'right.x'|'right.c')[]}
  */
 export function askedParts(prev, next) {
-  const slots = ['left.x', 'left.c', 'right.x', 'right.c'];
-  return slots.filter((slot) => {
+  assertState(prev, 'askedParts', 'předchozí stav');
+  assertState(next, 'askedParts', 'nový stav');
+  return SLOT_IDS.filter((slot) => {
     const [side, part] = slot.split('.');
     const before = prev[side][part];
     const after = next[side][part];
@@ -371,12 +494,15 @@ export function askedParts(prev, next) {
 
 /** Hodnota části stavu podle identifikátoru slotu. */
 export function partValue(state, slot) {
+  assertState(state, 'partValue');
+  assertSlot(slot, 'partValue');
   const [side, part] = slot.split('.');
   return { ...state[side][part] };
 }
 
 /** Česká otázka na hodnotu slotu, např. 'Kolik zbude na pravé straně?'. */
 export function partQuestion(slot) {
+  assertSlot(slot, 'partQuestion');
   const [side, part] = slot.split('.');
   const sideText = side === 'left' ? 'levé' : 'pravé';
   return part === 'x'
@@ -386,6 +512,10 @@ export function partQuestion(slot) {
 
 /** Text operace v metafoře váhy: 'Odečti 4 z obou stran'. */
 export function describeOperation(operation) {
+  // Týž kontrakt jako applyOperation: popisek se skládá z týchž polí, takže
+  // překlep se tu musí ozvat stejně hlasitě, ne vyrobit 'Odečti undefined'.
+  assertOperation(operation, 'describeOperation');
+
   if (operation.kind === 'expand') {
     return 'Roznásob závorku';
   }

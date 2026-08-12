@@ -18,6 +18,7 @@ import {
   isSolved,
   askedParts,
   partValue,
+  partQuestion,
   describeOperation,
 } from '../js/content/stepCheck.js';
 import { createStepSession } from '../js/engine/stepSession.js';
@@ -1076,4 +1077,163 @@ test('lžoucí miska by testem neprošla - proto se nesečtená strana nekreslí
   const empty = expr(-1, 2, 3, 1);
   assert.equal(formatExprRef(empty), '3 - x/2');
   assert.throws(() => assertScaleTellsTruth(formatExprRef(empty), empty, 'prázdná miska'));
+});
+
+/* --- UCN-STEP-001: kontrakt veřejných funkcí selhává hlučně a hned --- */
+
+/** Výjimka musí být SROZUMITELNÁ, ne pád na undefined uvnitř. */
+function assertLoudError(fn, expected, label) {
+  assert.throws(
+    fn,
+    (err) => {
+      assert.ok(
+        !(err instanceof TypeError),
+        `${label}: pořád to padá dovnitř na TypeError místo srozumitelné hlášky - ${err.message}`
+      );
+      assert.match(err.message, expected, `${label}: hláška nepojmenuje, co je špatně`);
+      return true;
+    },
+    label
+  );
+}
+
+test('UCN-STEP-001: applyOperation odmítne PRÁVĚ TU záměnu, na které vznikl falešný nález', () => {
+  // Ověřovací skript posílal { kind, value, term } místo { kind, operand, term }.
+  // Každé volání spadlo uvnitř na "Cannot read properties of undefined (reading
+  // 'n')", skript výjimky polykal a nulový počet přijatých kroků si vyložil jako
+  // "krokový řešič má slepou uličku, dítě uvízne". Stav přitom měl 720 platných
+  // operací a nález byl nezávisle "potvrzen" druhým agentem se stejnou chybou.
+  // Tenhle test je pojistka přesně proti té škodě, ne proti abstraktní vadě.
+  const start = state(3, 4, 0, 19);
+  assertLoudError(
+    () => applyOperation(start, { kind: 'sub', value: f(4), term: 'const' }),
+    /neznámý parametr operace value/,
+    'záměna operand → value'
+  );
+  // Hláška musí říct i to, co se ČEKALO - jinak volající hádá dál.
+  assert.throws(
+    () => applyOperation(start, { kind: 'sub', value: f(4), term: 'const' }),
+    /kind, operand, term, side/
+  );
+});
+
+test('UCN-STEP-001: chybějící operand a operand ve špatném tvaru se pojmenují', () => {
+  const start = state(3, 4, 0, 19);
+  for (const kind of ['add', 'sub', 'mul', 'div']) {
+    assertLoudError(
+      () => applyOperation(start, { kind }),
+      new RegExp(`operace '${kind}' potřebuje operand`),
+      `${kind} bez operandu`
+    );
+  }
+  // Špatný tvar = tytéž podmínky, jaké si hlídá makeFraction: celočíselné
+  // složky a nenulový jmenovatel. Řetězec '4' ani číslo 4 zlomek nejsou.
+  for (const operand of [null, 4, '4', { n: 1 }, { n: 1.5, d: 2 }, { n: 1, d: 0 }, [1, 2]]) {
+    assertLoudError(
+      () => applyOperation(start, { kind: 'sub', operand }),
+      /musí být zlomek \{ n, d \}/,
+      `operand ${JSON.stringify(operand) ?? String(operand)}`
+    );
+  }
+});
+
+test('UCN-STEP-001: neznámá operace, druh operandu i strana se pojmenují', () => {
+  const start = state(3, 4, 0, 19);
+  assertLoudError(() => applyOperation(start, null), /operace musí být objekt/, 'operace null');
+  assertLoudError(
+    () => applyOperation(start, { kind: 'odmocni', operand: f(2) }),
+    /neznámá operace/,
+    'neznámý kind'
+  );
+  assertLoudError(
+    () => applyOperation(start, { kind: 'add', operand: f(2), term: 'konstanta' }),
+    /neznámý druh operandu/,
+    'neznámý term'
+  );
+  for (const side of [undefined, 'middle']) {
+    assertLoudError(
+      () => applyOperation(start, { kind: 'combine', side }),
+      /potřebuje stranu 'left' nebo 'right'/,
+      `combine se stranou ${side}`
+    );
+  }
+  // Vadný STAV taky: bez téhle stráže se sáhne na state.left uvnitř.
+  assertLoudError(
+    () => applyOperation({ left: start.left }, { kind: 'sub', operand: f(4) }),
+    /stav rovnice musí být \{ left, right \}/,
+    'stav bez pravé strany'
+  );
+});
+
+test('UCN-STEP-001: vadný stav odmítne checkStep, askedParts i partValue', () => {
+  // Zákeřnější polovina vady: safeSolvedValue výjimku SPOLKNE, takže vadné
+  // VOLÁNÍ by se tvářilo jako verdikt O ROVNICI ("úprava rovnici změnila").
+  // Falešný nález vznikl přesně z takhle spolknuté výjimky.
+  const good = state(3, 4, 0, 19);
+  const badStates = [
+    null,
+    undefined,
+    {},
+    { left: good.left },
+    { left: good.left, right: { x: f(1) } }, // strana má x, chybí c
+    { left: good.left, right: { c: f(1) } }, // strana má c, chybí x
+  ];
+  // Obě půlky kontroly strany musí mít zuby: kdyby se hlídalo jen c, prošla by
+  // strana bez koeficientu u x - a to je pořád stav, na který se nedá počítat.
+  for (const bad of badStates) {
+    const label = JSON.stringify(bad) ?? String(bad);
+    assertLoudError(() => checkStep(good, bad), /nový stav musí být \{ left, right \}/, `checkStep next ${label}`);
+    assertLoudError(() => checkStep(bad, good), /předchozí stav musí být \{ left, right \}/, `checkStep prev ${label}`);
+    // askedParts a partValue čtou stav stejně hluboko, takže mají tutéž stráž.
+    assertLoudError(() => askedParts(good, bad), /nový stav musí být \{ left, right \}/, `askedParts next ${label}`);
+    assertLoudError(() => askedParts(bad, good), /předchozí stav musí být \{ left, right \}/, `askedParts prev ${label}`);
+    assertLoudError(() => partValue(bad, 'left.x'), /stav rovnice musí být \{ left, right \}/, `partValue ${label}`);
+  }
+});
+
+test('UCN-STEP-001: describeOperation a identifikátory slotů mají týž kontrakt', () => {
+  const start = state(3, 4, 0, 19);
+  // Bez stráže by popisek na tlačítku zněl 'Odečti undefined z obou stran'.
+  assertLoudError(
+    () => describeOperation({ kind: 'sub', value: f(4) }),
+    /neznámý parametr operace value/,
+    'describeOperation se záměnou'
+  );
+  assertLoudError(() => describeOperation({ kind: 'sub' }), /potřebuje operand/, 'popis bez operandu');
+  assertLoudError(() => partValue(start, 'links.x'), /neznámá část stavu/, 'překlep ve slotu');
+  assertLoudError(() => partQuestion('left.terms.0.x'), /neznámá část stavu/, 'člen není plain slot');
+});
+
+test('UCN-STEP-001: správná volání se kontrolou nezměnila', () => {
+  // Přejímací podmínka fáze: stráže nesmí posunout ANI JEDNU platnou cestu.
+  const plain = state(3, 4, 0, 19);
+  for (const operation of [
+    { kind: 'sub', operand: f(4) },
+    { kind: 'add', operand: f(2), term: 'x' },
+    { kind: 'mul', operand: f(2) },
+    { kind: 'div', operand: f(3) },
+    { kind: 'mul', operand: makeFraction(-1) }, // záporný operand je legitimní
+    { kind: 'div', operand: makeFraction(2, 9) }, // zlomkový taky
+  ]) {
+    assert.equal(applyOperation(plain, operation).status, 'ok', describeOperation(operation));
+  }
+  // expand a combine operand nemají - a bez něj se volat SMÍ.
+  const factored = { left: factoredExpr(2, 1, 1, 1, 3, 1), right: expr(0, 1, 10, 1) };
+  assert.equal(applyOperation(factored, { kind: 'expand' }).status, 'ok');
+  const multi = {
+    left: multiTermSide([
+      { x: f(2), c: f(0) },
+      { x: f(1), c: f(0) },
+    ]),
+    right: expr(0, 1, 9, 1),
+  };
+  assert.equal(applyOperation(multi, { kind: 'combine', side: 'left' }).status, 'ok');
+
+  // A výstupy, které kolem stráží procházejí, zůstaly do znaku stejné.
+  assert.equal(describeOperation({ kind: 'sub', operand: f(4) }), 'Odečti 4 z obou stran');
+  assert.equal(partQuestion('right.c'), 'Jaké číslo zůstane na pravé straně?');
+  assert.deepEqual(partValue(plain, 'left.x'), { n: 3, d: 1 });
+  const next = applyOperation(plain, { kind: 'sub', operand: f(4) }).next;
+  assert.equal(checkStep(plain, next).status, 'ok');
+  assert.deepEqual(askedParts(plain, next), ['right.c']);
 });
